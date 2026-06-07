@@ -1,8 +1,11 @@
 import {
   AlignmentType,
   Document,
+  Footer,
+  Header,
   Packer,
   PageBreak,
+  PageNumber,
   Paragraph,
   TextRun,
   convertInchesToTwip,
@@ -18,6 +21,13 @@ import { downloadBlob, sanitizeFilename } from './export'
 
 const SCRIPT_FONT = 'Courier New'
 
+const STYLE_NAMES: Record<string, string> = {
+  character: 'Character',
+  dialogue: 'Dialogue',
+  parenthetical: 'Parenthetical',
+  direction: 'StageDirection',
+}
+
 function ptToHalfPoints(pt: number): number {
   return pt * 2
 }
@@ -25,7 +35,7 @@ function ptToHalfPoints(pt: number): number {
 function scriptRun(
   text: string,
   settings: FormatSettings,
-  opts: { bold?: boolean; italics?: boolean } = {},
+  opts: { bold?: boolean; italics?: boolean; style?: string } = {},
 ): TextRun {
   return new TextRun({
     text,
@@ -33,6 +43,7 @@ function scriptRun(
     size: ptToHalfPoints(settings.fontSize),
     bold: opts.bold,
     italics: opts.italics,
+    style: opts.style,
   })
 }
 
@@ -103,9 +114,7 @@ function buildTitlePageParagraphs(settings: FormatSettings): Paragraph[] {
   return paragraphs
 }
 
-function stageDirectionItalic(
-  settings: FormatSettings,
-): boolean {
+function stageDirectionItalic(settings: FormatSettings): boolean {
   return settings.stageDirectionStyle !== 'plain'
 }
 
@@ -157,40 +166,107 @@ function elementToParagraphs(
             scriptRun(
               formatStageDirection(el.text, settings.stageDirectionStyle),
               settings,
-              { italics: stageDirectionItalic(settings) },
+              {
+                italics: stageDirectionItalic(settings),
+                style: STYLE_NAMES.direction,
+              },
             ),
           ],
           spacing: { after: 200 },
         }),
       ]
-    case 'character':
-      return [
+    case 'character': {
+      const paras: Paragraph[] = [
         new Paragraph({
           indent: { left: inch(settings.characterIndent) },
-          children: [scriptRun(el.text.toUpperCase(), settings, { bold: true })],
+          children: [
+            scriptRun(el.text.toUpperCase(), settings, {
+              bold: true,
+              style: STYLE_NAMES.character,
+            }),
+          ],
           spacing: {
             before: 240,
             after: settings.doubleSpaceAfterCharacter ? 120 : 0,
           },
         }),
       ]
+      if (el.dualCharacter) {
+        paras.push(
+          new Paragraph({
+            indent: { left: inch(settings.characterIndent) },
+            children: [
+              scriptRun(el.dualCharacter.toUpperCase(), settings, {
+                bold: true,
+                style: STYLE_NAMES.character,
+              }),
+            ],
+            spacing: { after: settings.doubleSpaceAfterCharacter ? 120 : 0 },
+          }),
+        )
+      }
+      return paras
+    }
     case 'parenthetical':
       return [
         new Paragraph({
           indent: { left: inch(settings.parentheticalIndent) },
-          children: [scriptRun(`(${el.text})`, settings, { italics: true })],
+          children: [
+            scriptRun(`(${el.text})`, settings, {
+              italics: true,
+              style: STYLE_NAMES.parenthetical,
+            }),
+          ],
           spacing: { after: 60 },
         }),
       ]
-    case 'dialogue':
-      return el.text.split('\n').map(
+    case 'dialogue': {
+      const paras = el.text.split('\n').map(
         (line) =>
           new Paragraph({
             indent: { left: inch(settings.dialogueIndent) },
-            children: [scriptRun(line, settings)],
+            children: [
+              scriptRun(line, settings, { style: STYLE_NAMES.dialogue }),
+            ],
             spacing: { after: 60 },
           }),
       )
+      if (el.dualDialogue) {
+        paras.push(
+          ...el.dualDialogue.split('\n').map(
+            (line) =>
+              new Paragraph({
+                indent: { left: inch(settings.dialogueIndent + 1) },
+                children: [
+                  scriptRun(line, settings, { style: STYLE_NAMES.dialogue }),
+                ],
+                spacing: { after: 60 },
+              }),
+          ),
+        )
+      }
+      return paras
+    }
+    case 'lyrics':
+      return el.text.split('\n').map(
+        (line) =>
+          new Paragraph({
+            indent: { left: inch(settings.dialogueIndent + 0.5) },
+            children: [scriptRun(line, settings, { italics: true })],
+            spacing: { after: 60 },
+          }),
+      )
+    case 'song_heading':
+      return [
+        emptyLine(settings),
+        new Paragraph({
+          alignment: AlignmentType.CENTER,
+          children: [
+            scriptRun(`"${el.text}"`, settings, { bold: true, italics: true }),
+          ],
+          spacing: { after: 200 },
+        }),
+      ]
     case 'stage_direction':
       return [
         new Paragraph({
@@ -198,7 +274,10 @@ function elementToParagraphs(
             scriptRun(
               formatStageDirection(el.text, settings.stageDirectionStyle),
               settings,
-              { italics: stageDirectionItalic(settings) },
+              {
+                italics: stageDirectionItalic(settings),
+                style: STYLE_NAMES.direction,
+              },
             ),
           ],
           spacing: { after: 200 },
@@ -232,6 +311,14 @@ export async function buildScriptDocx(
 
   for (const el of bodyElements) {
     children.push(...elementToParagraphs(el, mergedSettings))
+    if (el.type === 'character' && el.dualCharacter && el.dualDialogue) {
+      children.push(
+        ...elementToParagraphs(
+          { ...el, type: 'dialogue', text: el.dualDialogue },
+          mergedSettings,
+        ),
+      )
+    }
   }
 
   const doc = new Document({
@@ -240,13 +327,46 @@ export async function buildScriptDocx(
         properties: {
           page: {
             margin: {
-              top: convertInchesToTwip(1),
-              right: convertInchesToTwip(1),
-              bottom: convertInchesToTwip(1),
-              left: convertInchesToTwip(1.5),
+              top: convertInchesToTwip(mergedSettings.marginTop),
+              right: convertInchesToTwip(mergedSettings.marginRight),
+              bottom: convertInchesToTwip(mergedSettings.marginBottom),
+              left: convertInchesToTwip(mergedSettings.marginLeft),
             },
           },
         },
+        headers: mergedSettings.includePageNumbers
+          ? {
+              default: new Header({
+                children: [
+                  new Paragraph({
+                    children: [
+                      scriptRun(mergedSettings.titlePage.title, mergedSettings),
+                    ],
+                  }),
+                ],
+              }),
+            }
+          : undefined,
+        footers: mergedSettings.includePageNumbers
+          ? {
+              default: new Footer({
+                children: [
+                  new Paragraph({
+                    alignment: AlignmentType.RIGHT,
+                    children: [
+                      scriptRun('', mergedSettings),
+                      new TextRun({
+                        children: [PageNumber.CURRENT],
+                        font: SCRIPT_FONT,
+                        size: ptToHalfPoints(mergedSettings.fontSize),
+                      }),
+                      scriptRun('.', mergedSettings),
+                    ],
+                  }),
+                ],
+              }),
+            }
+          : undefined,
         children,
       },
     ],

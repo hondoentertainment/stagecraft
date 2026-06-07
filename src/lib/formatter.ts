@@ -1,6 +1,20 @@
-import type { FormatSettings, FormattedScript, ScriptElement } from '../types/script'
+import type {
+  FormatSettings,
+  FormattedScript,
+  ScriptElement,
+  TypeOverrides,
+} from '../types/script'
 import { DEFAULT_SETTINGS } from '../types/script'
-import { mergeDialogueLines, parseScript } from './parser'
+import {
+  estimatePageCount,
+  estimateRuntimeMinutes,
+  paginateElements,
+} from './pagination'
+import {
+  applyTypeOverrides,
+  mergeDialogueLines,
+  parseScript,
+} from './parser'
 
 const ROMAN: Record<string, string> = {
   '1': 'I',
@@ -47,6 +61,8 @@ const WORDS: Record<string, string> = {
   IX: 'NINE',
   X: 'TEN',
 }
+
+const MAX_DIALOGUE_CHARS = 35
 
 function pad(ch: string, inches: number): string {
   const cols = Math.round(inches * 10)
@@ -122,15 +138,29 @@ function formatElement(el: ScriptElement, settings: FormatSettings): string[] {
         formatStageDirection(el.text, settings.stageDirectionStyle),
         '',
       ]
-    case 'character':
-      return [
+    case 'character': {
+      const lines = [
         pad(' ', ci) + el.text.toUpperCase(),
         ...(settings.doubleSpaceAfterCharacter ? [''] : []),
       ]
+      if (el.dualCharacter) {
+        lines.push(pad(' ', ci) + el.dualCharacter.toUpperCase())
+        if (settings.doubleSpaceAfterCharacter) lines.push('')
+      }
+      return lines
+    }
     case 'parenthetical':
       return [pad(' ', pi) + `(${el.text})`]
     case 'dialogue':
       return el.text.split('\n').map((line) => pad(' ', di) + line)
+    case 'lyrics':
+      return [
+        '',
+        ...el.text.split('\n').map((line) => pad(' ', di + 0.5) + line),
+        '',
+      ]
+    case 'song_heading':
+      return ['', pad(' ', 20) + `"${el.text}"`, '']
     case 'stage_direction':
       return [
         formatStageDirection(el.text, settings.stageDirectionStyle),
@@ -167,10 +197,29 @@ function collectWarnings(elements: ScriptElement[]): string[] {
   let hasCharacter = false
   let hasDialogue = false
   let orphanDialogue = 0
+  let longDialogue = 0
+  let lowercaseCharacter = 0
+  let sceneWithoutSetting = 0
+  const characterNames = new Map<string, string>()
 
   for (let i = 0; i < elements.length; i++) {
     const el = elements[i]
-    if (el.type === 'character') hasCharacter = true
+
+    if (el.type === 'character') {
+      hasCharacter = true
+      const normalized = el.text.replace(/\s*\([^)]*\)/g, '').trim()
+      const upper = normalized.toUpperCase()
+      if (normalized !== upper) lowercaseCharacter++
+
+      const existing = characterNames.get(upper)
+      if (existing && existing !== el.text) {
+        warnings.push(
+          `Inconsistent character name: "${existing}" vs "${el.text}" — standardize spelling.`,
+        )
+      }
+      characterNames.set(upper, el.text)
+    }
+
     if (el.type === 'dialogue') {
       hasDialogue = true
       const prev = elements
@@ -179,6 +228,16 @@ function collectWarnings(elements: ScriptElement[]): string[] {
         .find((e) => e.type !== 'blank')
       if (prev?.type !== 'character' && prev?.type !== 'parenthetical') {
         orphanDialogue++
+      }
+      for (const line of el.text.split('\n')) {
+        if (line.length > MAX_DIALOGUE_CHARS) longDialogue++
+      }
+    }
+
+    if (el.type === 'scene') {
+      const next = elements.slice(i + 1).find((e) => e.type !== 'blank')
+      if (next?.type !== 'setting' && next?.type !== 'stage_direction') {
+        sceneWithoutSetting++
       }
     }
   }
@@ -194,16 +253,34 @@ function collectWarnings(elements: ScriptElement[]): string[] {
   if (!elements.some((e) => e.type === 'act' || e.type === 'scene')) {
     warnings.push('No act or scene headings detected — consider adding ACT/SCENE markers.')
   }
+  if (lowercaseCharacter > 0) {
+    warnings.push(
+      `${lowercaseCharacter} character name(s) are not ALL CAPS — use uppercase for cues.`,
+    )
+  }
+  if (longDialogue > 0) {
+    warnings.push(
+      `${longDialogue} dialogue line(s) exceed ~${MAX_DIALOGUE_CHARS} characters — may be too wide on the page.`,
+    )
+  }
+  if (sceneWithoutSetting > 0) {
+    warnings.push(
+      `${sceneWithoutSetting} scene heading(s) lack a setting line — add location/description.`,
+    )
+  }
 
-  return warnings
+  return [...new Set(warnings)]
 }
 
 export function getScriptSections(
   raw: string,
   settings: FormatSettings = DEFAULT_SETTINGS,
+  typeOverrides: TypeOverrides = {},
 ) {
-  const elements = mergeDialogueLines(parseScript(raw))
-  const extracted = extractTitlePageInfo(elements)
+  const parsed = mergeDialogueLines(
+    applyTypeOverrides(parseScript(raw), typeOverrides),
+  )
+  const extracted = extractTitlePageInfo(parsed)
 
   const mergedSettings: FormatSettings = {
     ...settings,
@@ -215,24 +292,26 @@ export function getScriptSections(
     },
   }
 
-  const bodyStart = elements.findIndex(
+  const bodyStart = parsed.findIndex(
     (e) => e.type === 'act' || e.type === 'scene',
   )
   const bodyElements =
     bodyStart >= 0
-      ? elements.slice(bodyStart)
-      : elements.filter((e) => !['title', 'subtitle', 'author'].includes(e.type))
+      ? parsed.slice(bodyStart)
+      : parsed.filter((e) => !['title', 'subtitle', 'author'].includes(e.type))
 
-  return { elements, mergedSettings, bodyElements }
+  return { elements: parsed, mergedSettings, bodyElements }
 }
 
 export function formatScript(
   raw: string,
   settings: FormatSettings = DEFAULT_SETTINGS,
+  typeOverrides: TypeOverrides = {},
 ): FormattedScript {
   const { elements: parsed, mergedSettings, bodyElements } = getScriptSections(
     raw,
     settings,
+    typeOverrides,
   )
 
   const outputLines: string[] = []
@@ -243,21 +322,83 @@ export function formatScript(
   }
 
   for (const el of bodyElements) {
-    outputLines.push(...formatElement(el, mergedSettings))
+    const formatted = formatElement(el, mergedSettings)
+    outputLines.push(...formatted)
+    if (el.type === 'character' && el.dualCharacter && el.dualDialogue) {
+      outputLines.push(
+        ...el.dualDialogue.split('\n').map((line) => pad(' ', mergedSettings.dialogueIndent) + line),
+      )
+    }
   }
+
+  const pageCount = estimatePageCount(
+    bodyElements,
+    mergedSettings,
+    mergedSettings.showTitlePage,
+  )
 
   return {
     elements: parsed,
     plainText: outputLines.join('\n').replace(/\n{4,}/g, '\n\n\n'),
     warnings: collectWarnings(parsed),
+    pageCount,
+    estimatedRuntimeMinutes: estimateRuntimeMinutes(
+      pageCount,
+      mergedSettings.showTitlePage,
+    ),
+  }
+}
+
+function elementToHtml(el: ScriptElement, settings: FormatSettings): string {
+  switch (el.type) {
+    case 'blank':
+      return '<div class="spacer"></div>'
+    case 'act':
+      return `<p class="act">ACT ${escapeHtml(formatNumber(el.text, settings.actSceneStyle))}</p>`
+    case 'scene':
+      return `<p class="scene">SCENE ${escapeHtml(formatNumber(el.text, settings.actSceneStyle))}</p>`
+    case 'setting':
+      return `<p class="setting">${escapeHtml(formatStageDirection(el.text, settings.stageDirectionStyle))}</p>`
+    case 'character': {
+      let html = `<p class="character">${escapeHtml(el.text.toUpperCase())}</p>`
+      if (el.dualCharacter) {
+        html += `<p class="character dual">${escapeHtml(el.dualCharacter.toUpperCase())}</p>`
+      }
+      return html
+    }
+    case 'parenthetical':
+      return `<p class="parenthetical">(${escapeHtml(el.text)})</p>`
+    case 'dialogue':
+      return el.text
+        .split('\n')
+        .map((line) => `<p class="dialogue">${escapeHtml(line)}</p>`)
+        .join('')
+    case 'lyrics':
+      return el.text
+        .split('\n')
+        .map((line) => `<p class="lyrics">${escapeHtml(line)}</p>`)
+        .join('')
+    case 'song_heading':
+      return `<p class="song-heading">"${escapeHtml(el.text)}"</p>`
+    case 'stage_direction':
+      return `<p class="direction">${escapeHtml(formatStageDirection(el.text, settings.stageDirectionStyle))}</p>`
+    case 'transition':
+      return `<p class="transition">${escapeHtml(el.text.toUpperCase())}</p>`
+    default:
+      return ''
   }
 }
 
 export function formatScriptToHtml(
   raw: string,
   settings: FormatSettings = DEFAULT_SETTINGS,
+  typeOverrides: TypeOverrides = {},
 ): string {
-  const { mergedSettings, bodyElements } = getScriptSections(raw, settings)
+  const { mergedSettings, bodyElements } = getScriptSections(
+    raw,
+    settings,
+    typeOverrides,
+  )
 
   const parts: string[] = []
 
@@ -273,56 +414,51 @@ export function formatScriptToHtml(
     if (mergedSettings.titlePage.contact) {
       parts.push(`<p class="contact">${escapeHtml(mergedSettings.titlePage.contact)}</p>`)
     }
-    parts.push('</div><div class="page-break"></div>')
+    parts.push('</div>')
   }
 
-  parts.push('<div class="script-body">')
+  const pages = paginateElements(
+    bodyElements,
+    mergedSettings,
+    mergedSettings.showTitlePage,
+  )
 
-  for (const el of bodyElements) {
-    switch (el.type) {
-      case 'blank':
-        parts.push('<div class="spacer"></div>')
-        break
-      case 'act':
-        parts.push(
-          `<p class="act">ACT ${escapeHtml(formatNumber(el.text, mergedSettings.actSceneStyle))}</p>`,
-        )
-        break
-      case 'scene':
-        parts.push(
-          `<p class="scene">SCENE ${escapeHtml(formatNumber(el.text, mergedSettings.actSceneStyle))}</p>`,
-        )
-        break
-      case 'setting':
-        parts.push(
-          `<p class="setting">${escapeHtml(formatStageDirection(el.text, mergedSettings.stageDirectionStyle))}</p>`,
-        )
-        break
-      case 'character':
-        parts.push(`<p class="character">${escapeHtml(el.text.toUpperCase())}</p>`)
-        break
-      case 'parenthetical':
-        parts.push(`<p class="parenthetical">(${escapeHtml(el.text)})</p>`)
-        break
-      case 'dialogue':
-        for (const line of el.text.split('\n')) {
-          parts.push(`<p class="dialogue">${escapeHtml(line)}</p>`)
-        }
-        break
-      case 'stage_direction':
-        parts.push(
-          `<p class="direction">${escapeHtml(formatStageDirection(el.text, mergedSettings.stageDirectionStyle))}</p>`,
-        )
-        break
-      case 'transition':
-        parts.push(`<p class="transition">${escapeHtml(el.text.toUpperCase())}</p>`)
-        break
-      default:
-        break
+  const scriptPages = mergedSettings.showTitlePage ? pages.slice(1) : pages
+  const startPageNum = mergedSettings.showTitlePage ? 2 : 1
+
+  scriptPages.forEach((page, idx) => {
+    const displayPageNum = startPageNum + idx
+    parts.push(`<div class="script-page-body" data-page="${displayPageNum}">`)
+
+    if (mergedSettings.includePageNumbers) {
+      parts.push(
+        `<div class="page-header"><span class="page-title">${escapeHtml(mergedSettings.titlePage.title)}</span><span class="page-num">${displayPageNum}.</span></div>`,
+      )
     }
+
+    for (const el of page.elements) {
+      parts.push(elementToHtml(el, mergedSettings))
+      if (el.type === 'character' && el.dualCharacter && el.dualDialogue) {
+        parts.push(
+          el.dualDialogue
+            .split('\n')
+            .map((line) => `<p class="dialogue dual">${escapeHtml(line)}</p>`)
+            .join(''),
+        )
+      }
+    }
+
+    parts.push('</div>')
+  })
+
+  if (scriptPages.length === 0 && bodyElements.length > 0) {
+    parts.push('<div class="script-page-body" data-page="1">')
+    for (const el of bodyElements) {
+      parts.push(elementToHtml(el, mergedSettings))
+    }
+    parts.push('</div>')
   }
 
-  parts.push('</div>')
   return parts.join('\n')
 }
 

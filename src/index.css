@@ -63,6 +63,11 @@ body {
 }
 
 @media print {
+  @page {
+    size: letter;
+    margin: 0;
+  }
+
   body {
     background: white;
     color: black;
@@ -79,9 +84,23 @@ body {
   .script-page {
     box-shadow: none !important;
     margin: 0 !important;
-    padding: 1in !important;
+    padding: 0 !important;
     max-width: none !important;
     background: white !important;
     color: black !important;
+    border-radius: 0 !important;
+  }
+
+  .script-page .title-page {
+    page-break-after: always;
+  }
+
+  .script-page .script-page-body {
+    page-break-after: always;
+    min-height: 10in;
+  }
+
+  .script-page .page-header {
+    position: running(header);
   }
 }

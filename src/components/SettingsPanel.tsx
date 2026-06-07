@@ -1,4 +1,5 @@
-import type { FormatSettings } from '../types/script'
+import type { FormatPresetId, FormatSettings } from '../types/script'
+import { FORMAT_PRESETS, applyPreset } from '../lib/presets'
 
 interface SettingsPanelProps {
   settings: FormatSettings
@@ -33,14 +34,19 @@ export function SettingsPanel({
   if (!open) return null
 
   const update = <K extends keyof FormatSettings>(key: K, value: FormatSettings[K]) => {
-    onChange({ ...settings, [key]: value })
+    onChange({ ...settings, [key]: value, formatPreset: 'custom' })
   }
 
   const updateTitle = (key: keyof FormatSettings['titlePage'], value: string) => {
     onChange({
       ...settings,
       titlePage: { ...settings.titlePage, [key]: value },
+      formatPreset: 'custom',
     })
+  }
+
+  const handlePreset = (presetId: FormatPresetId) => {
+    onChange(applyPreset(presetId, settings))
   }
 
   return (
@@ -64,6 +70,27 @@ export function SettingsPanel({
         </div>
 
         <div className="space-y-8">
+          <section>
+            <h3 className="mb-4 text-sm font-semibold text-amber-400">Format Preset</h3>
+            <div className="grid gap-2">
+              {FORMAT_PRESETS.map((preset) => (
+                <button
+                  key={preset.id}
+                  type="button"
+                  onClick={() => handlePreset(preset.id)}
+                  className={`rounded-lg border px-3 py-2.5 text-left transition ${
+                    settings.formatPreset === preset.id
+                      ? 'border-amber-500/50 bg-amber-500/10'
+                      : 'border-zinc-800 bg-zinc-900/50 hover:border-zinc-700'
+                  }`}
+                >
+                  <p className="text-sm font-medium text-zinc-200">{preset.label}</p>
+                  <p className="mt-0.5 text-[11px] text-zinc-500">{preset.description}</p>
+                </button>
+              ))}
+            </div>
+          </section>
+
           <section>
             <h3 className="mb-4 text-sm font-semibold text-amber-400">Title Page</h3>
             <div className="space-y-4">
@@ -98,6 +125,15 @@ export function SettingsPanel({
                   rows={3}
                   className="input-field resize-none"
                   placeholder="Agent, email, or rights info"
+                />
+              </Field>
+              <Field label="Synopsis (for submission package)">
+                <textarea
+                  value={settings.synopsis}
+                  onChange={(e) => update('synopsis', e.target.value)}
+                  rows={4}
+                  className="input-field resize-none"
+                  placeholder="Brief plot summary for agents and theatres"
                 />
               </Field>
               <label className="flex items-center gap-3 text-sm text-zinc-300">
@@ -147,6 +183,27 @@ export function SettingsPanel({
                   className="input-field"
                 />
               </Field>
+              <Field label="Parenthetical Indent (in)">
+                <input
+                  type="number"
+                  min={1}
+                  max={4}
+                  step={0.5}
+                  value={settings.parentheticalIndent}
+                  onChange={(e) => update('parentheticalIndent', Number(e.target.value))}
+                  className="input-field"
+                />
+              </Field>
+              <Field label="Lines Per Page">
+                <input
+                  type="number"
+                  min={40}
+                  max={60}
+                  value={settings.linesPerPage}
+                  onChange={(e) => update('linesPerPage', Number(e.target.value))}
+                  className="input-field"
+                />
+              </Field>
               <Field label="Act / Scene Number Style">
                 <select
                   value={settings.actSceneStyle}
@@ -175,6 +232,74 @@ export function SettingsPanel({
                   <option value="parentheses">Wrapped in (parentheses)</option>
                   <option value="plain">Plain text</option>
                 </select>
+              </Field>
+              <label className="flex items-center gap-3 text-sm text-zinc-300">
+                <input
+                  type="checkbox"
+                  checked={settings.includePageNumbers}
+                  onChange={(e) => update('includePageNumbers', e.target.checked)}
+                  className="size-4 rounded border-zinc-600 bg-zinc-900 accent-amber-500"
+                />
+                Include page numbers
+              </label>
+              <label className="flex items-center gap-3 text-sm text-zinc-300">
+                <input
+                  type="checkbox"
+                  checked={settings.doubleSpaceAfterCharacter}
+                  onChange={(e) => update('doubleSpaceAfterCharacter', e.target.checked)}
+                  className="size-4 rounded border-zinc-600 bg-zinc-900 accent-amber-500"
+                />
+                Double-space after character names
+              </label>
+            </div>
+          </section>
+
+          <section>
+            <h3 className="mb-4 text-sm font-semibold text-amber-400">Page Margins (in)</h3>
+            <div className="grid grid-cols-2 gap-4">
+              <Field label="Left">
+                <input
+                  type="number"
+                  min={1}
+                  max={2.5}
+                  step={0.25}
+                  value={settings.marginLeft}
+                  onChange={(e) => update('marginLeft', Number(e.target.value))}
+                  className="input-field"
+                />
+              </Field>
+              <Field label="Right">
+                <input
+                  type="number"
+                  min={0.5}
+                  max={2}
+                  step={0.25}
+                  value={settings.marginRight}
+                  onChange={(e) => update('marginRight', Number(e.target.value))}
+                  className="input-field"
+                />
+              </Field>
+              <Field label="Top">
+                <input
+                  type="number"
+                  min={0.5}
+                  max={2}
+                  step={0.25}
+                  value={settings.marginTop}
+                  onChange={(e) => update('marginTop', Number(e.target.value))}
+                  className="input-field"
+                />
+              </Field>
+              <Field label="Bottom">
+                <input
+                  type="number"
+                  min={0.5}
+                  max={2}
+                  step={0.25}
+                  value={settings.marginBottom}
+                  onChange={(e) => update('marginBottom', Number(e.target.value))}
+                  className="input-field"
+                />
               </Field>
             </div>
           </section>

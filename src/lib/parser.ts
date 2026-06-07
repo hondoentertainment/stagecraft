@@ -1,4 +1,4 @@
-import type { ScriptElement, ScriptElementType } from '../types/script'
+import type { ScriptElement, ScriptElementType, TypeOverrides } from '../types/script'
 
 const ACT_PATTERN =
   /^(?:ACT|Act)\s+([IVXLC]+|\d+|ONE|TWO|THREE|FOUR|FIVE|SIX|SEVEN|EIGHT|NINE|TEN|\w+)\s*(?:[-–—:]\s*)?(.*)?$/i
@@ -11,26 +11,42 @@ const ACT_SCENE_COMBINED =
 
 const CHARACTER_PATTERN = /^([A-Z][A-Z0-9\s.'\-()]+?)(?:\s*\(([^)]+)\))?\s*$/
 
+const CHARACTER_MODIFIERS =
+  /^(V\.?O\.?|O\.?S\.?|CONT'?D|OFF|ON PHONE|FILTERED|SINGING|PRE-LAP|SUBTITLE)$/i
+
 const TRANSITION_PATTERN =
-  /^(FADE IN\.?|FADE OUT\.?|CUT TO\.?|DISSOLVE TO\.?|SMASH CUT\.?|END OF (?:ACT|SCENE|PLAY)\.?|THE END\.?|BLACKOUT\.?|CURTAIN\.?)$/i
+  /^(FADE IN\.?|FADE OUT\.?|FADE TO BLACK\.?|CUT TO\.?|DISSOLVE TO\.?|SMASH CUT\.?|END OF (?:ACT|SCENE|PLAY)\.?|THE END\.?|BLACKOUT\.?|CURTAIN\.?|END OF SCENE\.?|END OF ACT\s+[IVXLC\d]+\.?)$/i
 
 const BYLINE_PATTERN = /^(?:by|written by|a play by)\s+(.+)/i
 
+const SONG_HEADING_PATTERN = /^(?:SONG|NUMBER|MUSICAL NUMBER):\s*["']?(.+?)["']?\s*$/i
+
+const DUAL_DIALOGUE_PATTERN = /^\[DUAL:\s*(.+?)\]\s*$/i
+
+const LYRICS_LINE_PATTERN = /^~(.+)$/
+
 function isLikelyCharacter(line: string): boolean {
   const trimmed = line.trim()
-  if (!trimmed || trimmed.length > 40) return false
+  if (!trimmed || trimmed.length > 45) return false
   if (!/^[A-Z]/.test(trimmed)) return false
+  if (/^(THE|A|AN)\s+[A-Z][A-Za-z]/.test(trimmed) && !/\(/.test(trimmed)) return false
   if (/[.!?]$/.test(trimmed) && !/\([^)]*\)/.test(trimmed)) return false
   if (/^(INT\.|EXT\.|INT\/EXT\.)/i.test(trimmed)) return false
   if (ACT_PATTERN.test(trimmed) || SCENE_PATTERN.test(trimmed)) return false
   if (TRANSITION_PATTERN.test(trimmed)) return false
+  if (SONG_HEADING_PATTERN.test(trimmed)) return false
 
   const withoutParen = trimmed.replace(/\([^)]*\)/g, '').trim()
   if (!withoutParen) return false
 
+  const parenMatch = trimmed.match(/\(([^)]+)\)/)
+  if (parenMatch && !CHARACTER_MODIFIERS.test(parenMatch[1].trim())) {
+    if (parenMatch[1].length > 20) return false
+  }
+
   const alphaRatio =
     (withoutParen.match(/[A-Za-z]/g)?.length ?? 0) / withoutParen.length
-  return alphaRatio > 0.6 && /^[A-Z0-9\s.'\-()]+$/.test(trimmed)
+  return alphaRatio > 0.6 && /^[A-Z0-9\s.'\-()^]+$/.test(trimmed)
 }
 
 function isStageDirection(line: string): boolean {
@@ -81,8 +97,23 @@ export function parseScript(raw: string): ScriptElement[] {
   const lines = raw.replace(/\r\n/g, '\n').split('\n')
   const elements: ScriptElement[] = []
   let pendingCharacter: string | null = null
+  let pendingDualCharacter: string | null = null
   let titleCaptured = false
   let authorCaptured = false
+  let inLyrics = false
+  let lyricsBuffer: string[] = []
+
+  function flushLyrics(lineNumber: number) {
+    if (lyricsBuffer.length > 0) {
+      elements.push({
+        type: 'lyrics',
+        text: lyricsBuffer.join('\n'),
+        lineNumber,
+      })
+      lyricsBuffer = []
+      inLyrics = false
+    }
+  }
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i]
@@ -90,15 +121,51 @@ export function parseScript(raw: string): ScriptElement[] {
     const lineNumber = i + 1
 
     if (!trimmed) {
+      flushLyrics(lineNumber)
       elements.push({ type: 'blank', text: '', lineNumber })
+      pendingCharacter = null
+      pendingDualCharacter = null
+      continue
+    }
+
+    const lyricsMatch = trimmed.match(LYRICS_LINE_PATTERN)
+    if (lyricsMatch) {
+      inLyrics = true
+      lyricsBuffer.push(lyricsMatch[1].trim())
       pendingCharacter = null
       continue
     }
+
+    if (inLyrics && !isLikelyCharacter(trimmed) && !isParenthetical(trimmed)) {
+      lyricsBuffer.push(trimmed)
+      continue
+    }
+
+    flushLyrics(lineNumber)
 
     const byMatch = trimmed.match(BYLINE_PATTERN)
     if (byMatch && !authorCaptured) {
       elements.push({ type: 'author', text: byMatch[1].trim(), lineNumber })
       authorCaptured = true
+      continue
+    }
+
+    const songMatch = trimmed.match(SONG_HEADING_PATTERN)
+    if (songMatch) {
+      elements.push({ type: 'song_heading', text: songMatch[1].trim(), lineNumber })
+      pendingCharacter = null
+      continue
+    }
+
+    if (trimmed.toUpperCase() === 'SONG' && !SONG_HEADING_PATTERN.test(trimmed)) {
+      elements.push({ type: 'song_heading', text: 'Untitled', lineNumber })
+      inLyrics = true
+      continue
+    }
+
+    const dualMatch = trimmed.match(DUAL_DIALOGUE_PATTERN)
+    if (dualMatch) {
+      pendingDualCharacter = dualMatch[1].trim()
       continue
     }
 
@@ -168,15 +235,34 @@ export function parseScript(raw: string): ScriptElement[] {
       let name = charMatch[1].trim()
       const inlineParen = charMatch[2]
       if (inlineParen) {
-        name = `${name} (${inlineParen})`
+        name = `${name} (${inlineParen.trim()})`
       }
-      elements.push({ type: 'character', text: name, lineNumber })
+
+      const el: ScriptElement = { type: 'character', text: name, lineNumber }
+
+      if (pendingDualCharacter) {
+        el.dualCharacter = pendingDualCharacter
+        pendingDualCharacter = null
+      }
+
+      elements.push(el)
       pendingCharacter = name
       continue
     }
 
     if (pendingCharacter) {
-      elements.push({ type: 'dialogue', text: trimmed, lineNumber })
+      const charIdx = elements.findLastIndex((e) => e.type === 'character')
+      const charEl = charIdx >= 0 ? elements[charIdx] : null
+      const afterChar = charIdx >= 0 ? elements.slice(charIdx + 1) : []
+      const hasPrimaryDialogue = afterChar.some(
+        (e) => e.type === 'dialogue' || e.type === 'parenthetical',
+      )
+
+      if (charEl?.dualCharacter && hasPrimaryDialogue && !charEl.dualDialogue) {
+        charEl.dualDialogue = trimmed
+      } else {
+        elements.push({ type: 'dialogue', text: trimmed, lineNumber })
+      }
       continue
     }
 
@@ -209,7 +295,21 @@ export function parseScript(raw: string): ScriptElement[] {
     pendingCharacter = null
   }
 
+  flushLyrics(lines.length)
+
   return elements
+}
+
+export function applyTypeOverrides(
+  elements: ScriptElement[],
+  overrides: TypeOverrides,
+): ScriptElement[] {
+  if (Object.keys(overrides).length === 0) return elements
+  return elements.map((el) => {
+    const override = overrides[el.lineNumber]
+    if (!override || el.type === 'blank') return el
+    return { ...el, type: override }
+  })
 }
 
 export function mergeDialogueLines(elements: ScriptElement[]): ScriptElement[] {
@@ -218,6 +318,8 @@ export function mergeDialogueLines(elements: ScriptElement[]): ScriptElement[] {
   for (const el of elements) {
     const prev = merged[merged.length - 1]
     if (el.type === 'dialogue' && prev?.type === 'dialogue') {
+      prev.text = `${prev.text}\n${el.text}`
+    } else if (el.type === 'lyrics' && prev?.type === 'lyrics') {
       prev.text = `${prev.text}\n${el.text}`
     } else {
       merged.push({ ...el })
@@ -240,7 +342,26 @@ export function getElementLabel(type: ScriptElementType): string {
     dialogue: 'Dialogue',
     stage_direction: 'Stage Direction',
     transition: 'Transition',
+    lyrics: 'Lyrics',
+    song_heading: 'Song',
     blank: 'Blank',
   }
   return labels[type]
 }
+
+export const ALL_ELEMENT_TYPES: ScriptElementType[] = [
+  'title',
+  'subtitle',
+  'author',
+  'act',
+  'scene',
+  'setting',
+  'character',
+  'parenthetical',
+  'dialogue',
+  'stage_direction',
+  'transition',
+  'lyrics',
+  'song_heading',
+  'blank',
+]
