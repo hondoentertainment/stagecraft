@@ -80,37 +80,86 @@ export function formatStageDirection(
   text: string,
   style: FormatSettings['stageDirectionStyle'],
 ): string {
-  if (style === 'parentheses') return `(${text})`
-  return text
+  const cleaned = text.replace(/^\(|\)\.?$/g, '').trim()
+  if (style === 'parentheses') return `(${cleaned})`
+  return cleaned
+}
+
+function formatLyricsLine(line: string, settings: FormatSettings): string {
+  return settings.lyricsStyle === 'uppercase' ? line.toUpperCase() : line
+}
+
+function capitalizeNamesInDirection(
+  text: string,
+  characterNames: string[],
+): string {
+  let result = text
+  for (const name of characterNames) {
+    const re = new RegExp(`\\b${name}\\b`, 'gi')
+    result = result.replace(re, name)
+  }
+  return result
+}
+
+export function collectCharacterNames(elements: ScriptElement[]): string[] {
+  const names = new Set<string>()
+  for (const el of elements) {
+    if (el.type === 'character') {
+      const base = el.text.replace(/\s*\([^)]*\)/g, '').trim().toUpperCase()
+      if (base) names.add(base)
+    }
+  }
+  return [...names]
 }
 
 function buildTitlePage(settings: FormatSettings): string[] {
   const { titlePage } = settings
-  const lines: string[] = ['', '', '', '', '']
-  lines.push(pad(' ', 25) + titlePage.title.toUpperCase())
+  const lines: string[] = ['', '', '', '', '', '', '']
+  lines.push(pad(' ', 22) + titlePage.title.toUpperCase())
   if (titlePage.subtitle) {
     lines.push('')
     lines.push(pad(' ', 20) + titlePage.subtitle)
   }
   lines.push('')
-  lines.push('')
   if (titlePage.author) {
-    lines.push(pad(' ', 28) + `by ${titlePage.author}`)
+    lines.push(pad(' ', 24) + `by ${titlePage.author}`)
+  }
+  lines.push('', '', '', '')
+  if (titlePage.copyright) {
+    lines.push(titlePage.copyright)
   }
   if (titlePage.contact) {
-    lines.push('')
-    lines.push('')
-    lines.push('')
-    lines.push(pad(' ', 15) + titlePage.contact)
+    const contactLines = titlePage.contact.split('\n')
+    for (const line of contactLines) {
+      lines.push(pad(' ', 48) + line)
+    }
   }
-  lines.push('', '', '', '', '')
+  lines.push('', '', '')
   return lines
 }
 
-function formatElement(el: ScriptElement, settings: FormatSettings): string[] {
+function buildCastPagePlain(
+  elements: ScriptElement[],
+  settings: FormatSettings,
+): string[] {
+  const names = collectCharacterNames(elements)
+  const lines: string[] = ['', pad(' ', 22) + 'CAST OF CHARACTERS', '', '']
+  for (const name of names.sort()) {
+    lines.push(pad(' ', settings.marginLeft * 10) + name)
+  }
+  lines.push('', '')
+  return lines
+}
+
+function formatElement(
+  el: ScriptElement,
+  settings: FormatSettings,
+  characterNames: string[] = [],
+): string[] {
   const ci = settings.characterIndent
   const di = settings.dialogueIndent
   const pi = settings.parentheticalIndent
+  const si = settings.stageDirectionIndent
 
   switch (el.type) {
     case 'blank':
@@ -135,7 +184,11 @@ function formatElement(el: ScriptElement, settings: FormatSettings): string[] {
       ]
     case 'setting':
       return [
-        formatStageDirection(el.text, settings.stageDirectionStyle),
+        pad(' ', si) +
+          formatStageDirection(
+            capitalizeNamesInDirection(el.text, characterNames),
+            settings.stageDirectionStyle,
+          ),
         '',
       ]
     case 'character': {
@@ -156,14 +209,20 @@ function formatElement(el: ScriptElement, settings: FormatSettings): string[] {
     case 'lyrics':
       return [
         '',
-        ...el.text.split('\n').map((line) => pad(' ', di + 0.5) + line),
+        ...el.text
+          .split('\n')
+          .map((line) => pad(' ', di + 0.5) + formatLyricsLine(line, settings)),
         '',
       ]
     case 'song_heading':
       return ['', pad(' ', 20) + `"${el.text}"`, '']
     case 'stage_direction':
       return [
-        formatStageDirection(el.text, settings.stageDirectionStyle),
+        pad(' ', si) +
+          formatStageDirection(
+            capitalizeNamesInDirection(el.text, characterNames),
+            settings.stageDirectionStyle,
+          ),
         '',
       ]
     case 'transition':
@@ -316,13 +375,20 @@ export function formatScript(
 
   const outputLines: string[] = []
 
+  const characterNames = collectCharacterNames(parsed)
+
   if (mergedSettings.showTitlePage) {
     outputLines.push(...buildTitlePage(mergedSettings))
     outputLines.push('', '—'.repeat(40), '')
   }
 
+  if (mergedSettings.showCastPage && characterNames.length > 0) {
+    outputLines.push(...buildCastPagePlain(parsed, mergedSettings))
+    outputLines.push('', '—'.repeat(40), '')
+  }
+
   for (const el of bodyElements) {
-    const formatted = formatElement(el, mergedSettings)
+    const formatted = formatElement(el, mergedSettings, characterNames)
     outputLines.push(...formatted)
     if (el.type === 'character' && el.dualCharacter && el.dualDialogue) {
       outputLines.push(
@@ -331,11 +397,7 @@ export function formatScript(
     }
   }
 
-  const pageCount = estimatePageCount(
-    bodyElements,
-    mergedSettings,
-    mergedSettings.showTitlePage,
-  )
+  const pageCount = estimatePageCount(bodyElements, mergedSettings)
 
   return {
     elements: parsed,
@@ -349,7 +411,11 @@ export function formatScript(
   }
 }
 
-function elementToHtml(el: ScriptElement, settings: FormatSettings): string {
+function elementToHtml(
+  el: ScriptElement,
+  settings: FormatSettings,
+  characterNames: string[] = [],
+): string {
   switch (el.type) {
     case 'blank':
       return '<div class="spacer"></div>'
@@ -358,7 +424,7 @@ function elementToHtml(el: ScriptElement, settings: FormatSettings): string {
     case 'scene':
       return `<p class="scene">SCENE ${escapeHtml(formatNumber(el.text, settings.actSceneStyle))}</p>`
     case 'setting':
-      return `<p class="setting">${escapeHtml(formatStageDirection(el.text, settings.stageDirectionStyle))}</p>`
+      return `<p class="setting">${escapeHtml(formatStageDirection(capitalizeNamesInDirection(el.text, characterNames), settings.stageDirectionStyle))}</p>`
     case 'character': {
       let html = `<p class="character">${escapeHtml(el.text.toUpperCase())}</p>`
       if (el.dualCharacter) {
@@ -376,12 +442,15 @@ function elementToHtml(el: ScriptElement, settings: FormatSettings): string {
     case 'lyrics':
       return el.text
         .split('\n')
-        .map((line) => `<p class="lyrics">${escapeHtml(line)}</p>`)
+        .map(
+          (line) =>
+            `<p class="lyrics">${escapeHtml(formatLyricsLine(line, settings))}</p>`,
+        )
         .join('')
     case 'song_heading':
       return `<p class="song-heading">"${escapeHtml(el.text)}"</p>`
     case 'stage_direction':
-      return `<p class="direction">${escapeHtml(formatStageDirection(el.text, settings.stageDirectionStyle))}</p>`
+      return `<p class="direction">${escapeHtml(formatStageDirection(capitalizeNamesInDirection(el.text, characterNames), settings.stageDirectionStyle))}</p>`
     case 'transition':
       return `<p class="transition">${escapeHtml(el.text.toUpperCase())}</p>`
     default:
@@ -394,12 +463,13 @@ export function formatScriptToHtml(
   settings: FormatSettings = DEFAULT_SETTINGS,
   typeOverrides: TypeOverrides = {},
 ): string {
-  const { mergedSettings, bodyElements } = getScriptSections(
+  const { elements, mergedSettings, bodyElements } = getScriptSections(
     raw,
     settings,
     typeOverrides,
   )
 
+  const characterNames = collectCharacterNames(elements)
   const parts: string[] = []
 
   if (mergedSettings.showTitlePage) {
@@ -411,20 +481,35 @@ export function formatScriptToHtml(
     if (mergedSettings.titlePage.author) {
       parts.push(`<p class="author">by ${escapeHtml(mergedSettings.titlePage.author)}</p>`)
     }
+    if (mergedSettings.titlePage.copyright) {
+      parts.push(
+        `<p class="copyright">${escapeHtml(mergedSettings.titlePage.copyright)}</p>`,
+      )
+    }
     if (mergedSettings.titlePage.contact) {
-      parts.push(`<p class="contact">${escapeHtml(mergedSettings.titlePage.contact)}</p>`)
+      parts.push(
+        `<p class="contact">${escapeHtml(mergedSettings.titlePage.contact)}</p>`,
+      )
     }
     parts.push('</div>')
   }
 
-  const pages = paginateElements(
-    bodyElements,
-    mergedSettings,
-    mergedSettings.showTitlePage,
-  )
+  if (mergedSettings.showCastPage && characterNames.length > 0) {
+    parts.push('<div class="cast-page">')
+    parts.push('<h2>Cast of Characters</h2>')
+    parts.push('<ul>')
+    for (const name of [...characterNames].sort()) {
+      parts.push(`<li>${escapeHtml(name)}</li>`)
+    }
+    parts.push('</ul></div>')
+  }
 
-  const scriptPages = mergedSettings.showTitlePage ? pages.slice(1) : pages
-  const startPageNum = mergedSettings.showTitlePage ? 2 : 1
+  const frontMatterPages =
+    (mergedSettings.showTitlePage ? 1 : 0) + (mergedSettings.showCastPage ? 1 : 0)
+
+  const pages = paginateElements(bodyElements, mergedSettings, frontMatterPages > 0)
+  const scriptPages = pages.slice(frontMatterPages)
+  const startPageNum = mergedSettings.pageNumberStartsAt
 
   scriptPages.forEach((page, idx) => {
     const displayPageNum = startPageNum + idx
@@ -432,12 +517,12 @@ export function formatScriptToHtml(
 
     if (mergedSettings.includePageNumbers) {
       parts.push(
-        `<div class="page-header"><span class="page-title">${escapeHtml(mergedSettings.titlePage.title)}</span><span class="page-num">${displayPageNum}.</span></div>`,
+        `<div class="page-header"><span class="page-title">${escapeHtml(mergedSettings.titlePage.title)}</span><span class="page-num">${displayPageNum}</span></div>`,
       )
     }
 
     for (const el of page.elements) {
-      parts.push(elementToHtml(el, mergedSettings))
+      parts.push(elementToHtml(el, mergedSettings, characterNames))
       if (el.type === 'character' && el.dualCharacter && el.dualDialogue) {
         parts.push(
           el.dualDialogue
@@ -454,7 +539,7 @@ export function formatScriptToHtml(
   if (scriptPages.length === 0 && bodyElements.length > 0) {
     parts.push('<div class="script-page-body" data-page="1">')
     for (const el of bodyElements) {
-      parts.push(elementToHtml(el, mergedSettings))
+      parts.push(elementToHtml(el, mergedSettings, characterNames))
     }
     parts.push('</div>')
   }

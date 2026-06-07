@@ -1,5 +1,6 @@
 import type { FormatPresetId, FormatSettings } from '../types/script'
 import { DEFAULT_SETTINGS } from '../types/script'
+import { DRAMATISTS_GUILD_SPEC } from './dramatistsGuild'
 
 export interface FormatPreset {
   id: FormatPresetId
@@ -10,21 +11,32 @@ export interface FormatPreset {
 
 export const FORMAT_PRESETS: FormatPreset[] = [
   {
+    id: 'dramatists-guild',
+    label: 'Dramatists Guild',
+    description:
+      'DG standard — Courier 12pt, 1.5" binding margin, parenthetical stage directions, cast page',
+    settings: DRAMATISTS_GUILD_SPEC,
+  },
+  {
     id: 'us-stage',
     label: 'US Stage Play',
-    description: 'Samuel French standard — 1.5" left margin, Roman numerals',
+    description: 'Samuel French style — Roman numerals, italic stage directions',
     settings: {
       formatPreset: 'us-stage',
       actSceneStyle: 'roman',
       characterIndent: 3.5,
       dialogueIndent: 2.5,
       parentheticalIndent: 2,
+      stageDirectionIndent: 1.5,
       marginLeft: 1.5,
       marginRight: 1,
       linesPerPage: 54,
       stageDirectionStyle: 'italic',
       doubleSpaceAfterCharacter: true,
       includePageNumbers: true,
+      showCastPage: false,
+      lyricsStyle: 'normal',
+      pageNumberStartsAt: 1,
     },
   },
   {
@@ -37,12 +49,16 @@ export const FORMAT_PRESETS: FormatPreset[] = [
       characterIndent: 4,
       dialogueIndent: 2.75,
       parentheticalIndent: 2.25,
+      stageDirectionIndent: 1.75,
       marginLeft: 1.75,
       marginRight: 1,
       linesPerPage: 54,
       stageDirectionStyle: 'italic',
       doubleSpaceAfterCharacter: true,
       includePageNumbers: true,
+      showCastPage: false,
+      lyricsStyle: 'normal',
+      pageNumberStartsAt: 1,
     },
   },
   {
@@ -53,32 +69,27 @@ export const FORMAT_PRESETS: FormatPreset[] = [
       formatPreset: 'one-act',
       actSceneStyle: 'arabic',
       characterIndent: 3.5,
-      dialogueIndent: 2.5,
-      parentheticalIndent: 2,
+      dialogueIndent: 1.5,
+      parentheticalIndent: 1.5,
+      stageDirectionIndent: 1.5,
       marginLeft: 1.5,
       marginRight: 1,
       linesPerPage: 54,
-      stageDirectionStyle: 'plain',
+      stageDirectionStyle: 'parentheses',
       doubleSpaceAfterCharacter: false,
       includePageNumbers: true,
+      showCastPage: false,
+      lyricsStyle: 'normal',
+      pageNumberStartsAt: 1,
     },
   },
   {
     id: 'musical',
-    label: 'Musical',
-    description: 'Lyric blocks and song headings for musical theatre',
+    label: 'Musical (DG)',
+    description: 'Dramatists Guild musical — ALL CAPS lyrics, cast page, song headings',
     settings: {
+      ...DRAMATISTS_GUILD_SPEC,
       formatPreset: 'musical',
-      actSceneStyle: 'roman',
-      characterIndent: 3.5,
-      dialogueIndent: 2.5,
-      parentheticalIndent: 2,
-      marginLeft: 1.5,
-      marginRight: 1,
-      linesPerPage: 54,
-      stageDirectionStyle: 'italic',
-      doubleSpaceAfterCharacter: true,
-      includePageNumbers: true,
     },
   },
 ]

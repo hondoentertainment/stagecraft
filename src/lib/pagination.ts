@@ -107,14 +107,27 @@ export function paginateElements(
   }))
 }
 
+export function countFrontMatterPages(settings: FormatSettings): number {
+  let pages = 0
+  if (settings.showTitlePage) pages++
+  if (settings.showCastPage) pages++
+  return pages
+}
+
 export function estimatePageCount(
   elements: ScriptElement[],
   settings: FormatSettings,
-  showTitlePage: boolean,
+  showTitlePage?: boolean,
 ): number {
   const bodyLines = countTotalLines(elements, settings)
   const bodyPages = Math.max(1, Math.ceil(bodyLines / settings.linesPerPage))
-  return bodyPages + (showTitlePage ? 1 : 0)
+  const frontMatter =
+    showTitlePage !== undefined
+      ? showTitlePage
+        ? 1
+        : 0
+      : countFrontMatterPages(settings)
+  return bodyPages + frontMatter
 }
 
 export function estimateRuntimeMinutes(pageCount: number, showTitlePage: boolean): number {

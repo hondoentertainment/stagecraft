@@ -13,6 +13,7 @@ import {
 import type { FormatSettings, ScriptElement } from '../types/script'
 import { DEFAULT_SETTINGS } from '../types/script'
 import {
+  collectCharacterNames,
   formatNumber,
   formatStageDirection,
   getScriptSections,
@@ -91,12 +92,22 @@ function buildTitlePageParagraphs(settings: FormatSettings): Paragraph[] {
     )
   }
 
+  paragraphs.push(emptyLine(settings), emptyLine(settings), emptyLine(settings))
+
+  if (titlePage.copyright) {
+    paragraphs.push(
+      new Paragraph({
+        alignment: AlignmentType.LEFT,
+        children: [scriptRun(titlePage.copyright, settings)],
+        spacing: { after: 120 },
+      }),
+    )
+  }
+
   if (titlePage.contact) {
     paragraphs.push(
-      emptyLine(settings),
-      emptyLine(settings),
       new Paragraph({
-        alignment: AlignmentType.CENTER,
+        alignment: AlignmentType.RIGHT,
         children: [scriptRun(titlePage.contact, settings)],
         spacing: { after: 200 },
       }),
@@ -105,10 +116,43 @@ function buildTitlePageParagraphs(settings: FormatSettings): Paragraph[] {
 
   paragraphs.push(
     emptyLine(settings),
-    emptyLine(settings),
     new Paragraph({
       children: [new PageBreak()],
     }),
+  )
+
+  return paragraphs
+}
+
+function buildCastPageParagraphs(
+  characterNames: string[],
+  settings: FormatSettings,
+): Paragraph[] {
+  const paragraphs: Paragraph[] = [
+    emptyLine(settings),
+    emptyLine(settings),
+    new Paragraph({
+      alignment: AlignmentType.CENTER,
+      children: [
+        scriptRun('CAST OF CHARACTERS', settings, { bold: true, italics: false }),
+      ],
+      spacing: { after: 300 },
+    }),
+  ]
+
+  for (const name of characterNames.sort()) {
+    paragraphs.push(
+      new Paragraph({
+        indent: { left: convertInchesToTwip(settings.marginLeft) },
+        children: [scriptRun(name, settings)],
+        spacing: { after: 80 },
+      }),
+    )
+  }
+
+  paragraphs.push(
+    emptyLine(settings),
+    new Paragraph({ children: [new PageBreak()] }),
   )
 
   return paragraphs
@@ -121,8 +165,17 @@ function stageDirectionItalic(settings: FormatSettings): boolean {
 function elementToParagraphs(
   el: ScriptElement,
   settings: FormatSettings,
+  characterNames: string[] = [],
 ): Paragraph[] {
   const inch = convertInchesToTwip
+
+  const capitalizeDirection = (text: string) => {
+    let result = text
+    for (const name of characterNames) {
+      result = result.replace(new RegExp(`\\b${name}\\b`, 'gi'), name)
+    }
+    return result
+  }
 
   switch (el.type) {
     case 'blank':
@@ -162,9 +215,13 @@ function elementToParagraphs(
     case 'setting':
       return [
         new Paragraph({
+          indent: { left: inch(settings.stageDirectionIndent) },
           children: [
             scriptRun(
-              formatStageDirection(el.text, settings.stageDirectionStyle),
+              formatStageDirection(
+                capitalizeDirection(el.text),
+                settings.stageDirectionStyle,
+              ),
               settings,
               {
                 italics: stageDirectionItalic(settings),
@@ -252,7 +309,13 @@ function elementToParagraphs(
         (line) =>
           new Paragraph({
             indent: { left: inch(settings.dialogueIndent + 0.5) },
-            children: [scriptRun(line, settings, { italics: true })],
+            children: [
+              scriptRun(
+                settings.lyricsStyle === 'uppercase' ? line.toUpperCase() : line,
+                settings,
+                { bold: settings.lyricsStyle === 'uppercase' },
+              ),
+            ],
             spacing: { after: 60 },
           }),
       )
@@ -270,9 +333,13 @@ function elementToParagraphs(
     case 'stage_direction':
       return [
         new Paragraph({
+          indent: { left: inch(settings.stageDirectionIndent) },
           children: [
             scriptRun(
-              formatStageDirection(el.text, settings.stageDirectionStyle),
+              formatStageDirection(
+                capitalizeDirection(el.text),
+                settings.stageDirectionStyle,
+              ),
               settings,
               {
                 italics: stageDirectionItalic(settings),
@@ -302,20 +369,26 @@ export async function buildScriptDocx(
   raw: string,
   settings: FormatSettings = DEFAULT_SETTINGS,
 ): Promise<Blob> {
-  const { mergedSettings, bodyElements } = getScriptSections(raw, settings)
+  const { elements, mergedSettings, bodyElements } = getScriptSections(raw, settings)
+  const characterNames = collectCharacterNames(elements)
   const children: Paragraph[] = []
 
   if (mergedSettings.showTitlePage) {
     children.push(...buildTitlePageParagraphs(mergedSettings))
   }
 
+  if (mergedSettings.showCastPage && characterNames.length > 0) {
+    children.push(...buildCastPageParagraphs(characterNames, mergedSettings))
+  }
+
   for (const el of bodyElements) {
-    children.push(...elementToParagraphs(el, mergedSettings))
+    children.push(...elementToParagraphs(el, mergedSettings, characterNames))
     if (el.type === 'character' && el.dualCharacter && el.dualDialogue) {
       children.push(
         ...elementToParagraphs(
           { ...el, type: 'dialogue', text: el.dualDialogue },
           mergedSettings,
+          characterNames,
         ),
       )
     }

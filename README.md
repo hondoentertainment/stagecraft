@@ -7,7 +7,8 @@ Professional playwright script formatter. Paste a raw script and get industry-st
 - **Smart parsing** — Characters, dialogue, parentheticals, stage directions, transitions, lyrics, V.O./O.S./CONT'D modifiers
 - **Live preview** — Paginated output with page numbers and Courier typography
 - **Title page** — Configurable title, subtitle, author, contact, and synopsis
-- **Format presets** — US stage, UK stage, one-act, and musical templates
+- **Dramatists Guild preset (default)** — Courier 12pt, 1.5" binding margin, parenthetical stage directions, cast page, ALL CAPS lyrics
+- **Format presets** — Dramatists Guild, US stage, UK stage, one-act, and musical templates
 - **Type overrides** — Correct parser mistakes from the structure outline
 - **Import** — `.txt`, `.docx`, `.fountain`, `.fdx`, `.md` with Fountain-aware parsing
 - **Export** — `.txt`, `.docx`, `.pdf`, `.fountain`, `.fdx`, submission ZIP, print/PDF
@@ -33,7 +34,7 @@ Open [http://localhost:5173](http://localhost:5173).
 | Dialogue | Lines following a character name |
 | Parenthetical | `(looking up)` |
 | Act / Scene | `ACT 1` or `Act 1 Scene 2` |
-| Stage direction | `Marcus exits.` |
+| Stage direction | `(MARCUS exits.)` — parenthetical, 1.5" indent |
 | Song | `SONG: "Title"` then `~lyric line` |
 | Transition | `FADE OUT.` |
 

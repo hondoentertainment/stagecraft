@@ -222,11 +222,20 @@ export function parseScript(raw: string): ScriptElement[] {
     }
 
     if (isParenthetical(trimmed)) {
-      elements.push({
-        type: 'parenthetical',
-        text: trimmed.replace(/^\(|\)\.?$/g, ''),
-        lineNumber,
-      })
+      const inner = trimmed.replace(/^\(|\)\.?$/g, '')
+      if (pendingCharacter) {
+        elements.push({
+          type: 'parenthetical',
+          text: inner,
+          lineNumber,
+        })
+      } else {
+        elements.push({
+          type: 'stage_direction',
+          text: inner,
+          lineNumber,
+        })
+      }
       continue
     }
 

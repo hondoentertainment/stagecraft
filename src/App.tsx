@@ -529,11 +529,14 @@ function FormattingGuide() {
         <GuideItem title="Act & Scene" example="ACT 1 / SCENE 2">
           Mark structural breaks — combined or separate lines work.
         </GuideItem>
-        <GuideItem title="Stage directions" example="Marcus exits.">
-          Action lines are auto-detected and italicized.
+        <GuideItem title="Stage directions" example="(MARCUS exits.)">
+          Dramatists Guild format uses parenthetical action lines at 1.5&quot;.
         </GuideItem>
         <GuideItem title="Lyrics" example='SONG: "Title" / ~lyric line'>
-          Musical numbers use song headings and ~ lyric lines.
+          DG musical format: ALL CAPS lyrics with one indent.
+        </GuideItem>
+        <GuideItem title="Cast page" example="Auto-generated">
+          Cast of Characters page appears between title page and script.
         </GuideItem>
         <GuideItem title="Transitions" example="FADE OUT.">
           Standard transitions are centered-right automatically.

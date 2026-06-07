@@ -1,5 +1,5 @@
 import type { FormatSettings, ScriptElement } from '../types/script'
-import { estimatePageCount, estimateRuntimeMinutes } from './pagination'
+import { countFrontMatterPages, estimatePageCount, estimateRuntimeMinutes } from './pagination'
 
 export interface CharacterReport {
   name: string
@@ -103,8 +103,11 @@ export function generateScriptReport(
 
   flushScene()
 
-  const pageCount = estimatePageCount(bodyElements, settings, settings.showTitlePage)
-  const runtimeMinutes = estimateRuntimeMinutes(pageCount, settings.showTitlePage)
+  const pageCount = estimatePageCount(bodyElements, settings)
+  const runtimeMinutes = estimateRuntimeMinutes(
+    pageCount,
+    countFrontMatterPages(settings) > 0,
+  )
 
   return {
     characters: [...charMap.values()].sort((a, b) => b.lineCount - a.lineCount),

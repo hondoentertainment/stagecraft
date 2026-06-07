@@ -118,13 +118,22 @@ export function SettingsPanel({
                   className="input-field"
                 />
               </Field>
-              <Field label="Contact Info">
+              <Field label="Contact Info (bottom right of title page)">
                 <textarea
                   value={settings.titlePage.contact}
                   onChange={(e) => updateTitle('contact', e.target.value)}
                   rows={3}
                   className="input-field resize-none"
-                  placeholder="Agent, email, or rights info"
+                  placeholder="Mailing address, phone, email, agent"
+                />
+              </Field>
+              <Field label="Copyright (bottom left of title page)">
+                <input
+                  type="text"
+                  value={settings.titlePage.copyright}
+                  onChange={(e) => updateTitle('copyright', e.target.value)}
+                  className="input-field"
+                  placeholder="© 2026 Author Name"
                 />
               </Field>
               <Field label="Synopsis (for submission package)">
@@ -144,6 +153,15 @@ export function SettingsPanel({
                   className="size-4 rounded border-zinc-600 bg-zinc-900 accent-amber-500"
                 />
                 Include title page
+              </label>
+              <label className="flex items-center gap-3 text-sm text-zinc-300">
+                <input
+                  type="checkbox"
+                  checked={settings.showCastPage}
+                  onChange={(e) => update('showCastPage', e.target.checked)}
+                  className="size-4 rounded border-zinc-600 bg-zinc-900 accent-amber-500"
+                />
+                Include cast of characters page (Dramatists Guild)
               </label>
             </div>
           </section>
@@ -191,6 +209,17 @@ export function SettingsPanel({
                   step={0.5}
                   value={settings.parentheticalIndent}
                   onChange={(e) => update('parentheticalIndent', Number(e.target.value))}
+                  className="input-field"
+                />
+              </Field>
+              <Field label="Stage Direction Indent (in)">
+                <input
+                  type="number"
+                  min={1}
+                  max={4}
+                  step={0.5}
+                  value={settings.stageDirectionIndent}
+                  onChange={(e) => update('stageDirectionIndent', Number(e.target.value))}
                   className="input-field"
                 />
               </Field>
