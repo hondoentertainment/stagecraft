@@ -53,14 +53,17 @@ function pad(ch: string, inches: number): string {
   return ch.repeat(Math.max(0, cols))
 }
 
-function formatNumber(num: string, style: FormatSettings['actSceneStyle']): string {
+export function formatNumber(num: string, style: FormatSettings['actSceneStyle']): string {
   const upper = num.toUpperCase()
   if (style === 'roman') return ROMAN[upper] ?? upper
   if (style === 'words') return WORDS[upper] ?? upper
   return upper.replace(/[^0-9]/g, '') || upper
 }
 
-function formatStageDirection(text: string, style: FormatSettings['stageDirectionStyle']): string {
+export function formatStageDirection(
+  text: string,
+  style: FormatSettings['stageDirectionStyle'],
+): string {
   if (style === 'parentheses') return `(${text})`
   return text
 }
@@ -140,7 +143,7 @@ function formatElement(el: ScriptElement, settings: FormatSettings): string[] {
   }
 }
 
-function extractTitlePageInfo(elements: ScriptElement[]): {
+export function extractTitlePageInfo(elements: ScriptElement[]): {
   title: string
   subtitle: string
   author: string
@@ -195,12 +198,12 @@ function collectWarnings(elements: ScriptElement[]): string[] {
   return warnings
 }
 
-export function formatScript(
+export function getScriptSections(
   raw: string,
   settings: FormatSettings = DEFAULT_SETTINGS,
-): FormattedScript {
-  const parsed = mergeDialogueLines(parseScript(raw))
-  const extracted = extractTitlePageInfo(parsed)
+) {
+  const elements = mergeDialogueLines(parseScript(raw))
+  const extracted = extractTitlePageInfo(elements)
 
   const mergedSettings: FormatSettings = {
     ...settings,
@@ -212,13 +215,25 @@ export function formatScript(
     },
   }
 
-  const bodyStart = parsed.findIndex(
+  const bodyStart = elements.findIndex(
     (e) => e.type === 'act' || e.type === 'scene',
   )
   const bodyElements =
-    bodyStart >= 0 ? parsed.slice(bodyStart) : parsed.filter(
-      (e) => !['title', 'subtitle', 'author'].includes(e.type),
-    )
+    bodyStart >= 0
+      ? elements.slice(bodyStart)
+      : elements.filter((e) => !['title', 'subtitle', 'author'].includes(e.type))
+
+  return { elements, mergedSettings, bodyElements }
+}
+
+export function formatScript(
+  raw: string,
+  settings: FormatSettings = DEFAULT_SETTINGS,
+): FormattedScript {
+  const { elements: parsed, mergedSettings, bodyElements } = getScriptSections(
+    raw,
+    settings,
+  )
 
   const outputLines: string[] = []
 
@@ -242,25 +257,7 @@ export function formatScriptToHtml(
   raw: string,
   settings: FormatSettings = DEFAULT_SETTINGS,
 ): string {
-  const { elements } = formatScript(raw, settings)
-  const extracted = extractTitlePageInfo(elements)
-  const mergedSettings: FormatSettings = {
-    ...settings,
-    titlePage: {
-      ...settings.titlePage,
-      title: settings.titlePage.title || extracted.title || 'Untitled Play',
-      subtitle: settings.titlePage.subtitle || extracted.subtitle,
-      author: settings.titlePage.author || extracted.author,
-    },
-  }
-
-  const bodyStart = elements.findIndex(
-    (e) => e.type === 'act' || e.type === 'scene',
-  )
-  const bodyElements =
-    bodyStart >= 0
-      ? elements.slice(bodyStart)
-      : elements.filter((e) => !['title', 'subtitle', 'author'].includes(e.type))
+  const { mergedSettings, bodyElements } = getScriptSections(raw, settings)
 
   const parts: string[] = []
 

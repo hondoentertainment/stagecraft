@@ -15,6 +15,7 @@ export default function App() {
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [view, setView] = useState<View>('split')
   const [copied, setCopied] = useState(false)
+  const [exportingDocx, setExportingDocx] = useState(false)
   const [sidebarTab, setSidebarTab] = useState<'outline' | 'tips'>('outline')
 
   const formatted = useMemo(
@@ -34,6 +35,16 @@ export default function App() {
     const name = sanitizeFilename(settings.titlePage.title)
     downloadText(formatted.plainText, `${name}.txt`)
   }, [formatted.plainText, settings.titlePage.title])
+
+  const handleDownloadDocx = useCallback(async () => {
+    setExportingDocx(true)
+    try {
+      const { downloadScriptDocx } = await import('./lib/docxExport')
+      await downloadScriptDocx(rawScript, settings)
+    } finally {
+      setExportingDocx(false)
+    }
+  }, [rawScript, settings])
 
   const handlePrint = useCallback(() => {
     printScript(settings)
@@ -71,7 +82,15 @@ export default function App() {
               {copied ? 'Copied!' : 'Copy'}
             </button>
             <button type="button" onClick={handleDownload} className="btn-secondary hidden sm:inline-flex">
-              Export
+              .txt
+            </button>
+            <button
+              type="button"
+              onClick={handleDownloadDocx}
+              disabled={exportingDocx}
+              className="btn-secondary hidden sm:inline-flex disabled:opacity-50"
+            >
+              {exportingDocx ? 'Exporting…' : '.docx'}
             </button>
             <button type="button" onClick={handlePrint} className="btn-primary">
               Print / PDF

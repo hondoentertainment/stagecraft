@@ -8,7 +8,7 @@ Professional playwright script formatter. Paste a raw script and get industry-st
 - **Live preview** — See formatted output in real time with Courier-style typography
 - **Title page** — Configurable title, subtitle, author, and contact info
 - **Format settings** — Adjust indents, font size, act/scene numbering (Roman/Arabic/Words), and stage direction style
-- **Export** — Copy to clipboard, download as `.txt`, or print/save as PDF
+- **Export** — Copy to clipboard, download as `.txt` or `.docx`, or print/save as PDF
 - **Structure outline** — Review how each line was classified with helpful warnings
 
 ## Getting Started
