@@ -94,7 +94,9 @@ export function ScriptUpload({ onImport, onLoadSample, children }: ScriptUploadP
         </h2>
         <div className="flex items-center gap-3">
           {uploading && (
-            <span className="text-xs text-amber-400">Converting…</span>
+            <span className="text-xs text-amber-400" role="status" aria-live="polite">
+              Converting…
+            </span>
           )}
           {onLoadSample && (
             <button
@@ -117,7 +119,10 @@ export function ScriptUpload({ onImport, onLoadSample, children }: ScriptUploadP
       </div>
 
       {error && (
-        <div className="mx-4 mt-3 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-200">
+        <div
+          role="alert"
+          className="mx-4 mt-3 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-200"
+        >
           {error}
           <button
             type="button"

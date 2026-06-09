@@ -1,10 +1,17 @@
 import type {
+  CastMetadata,
   FormatSettings,
   FormattedScript,
   ScriptElement,
   TypeOverrides,
 } from '../types/script'
 import { DEFAULT_SETTINGS } from '../types/script'
+import {
+  formatCastPageHtml,
+  formatCastPagePlain,
+  mergeCastWithDetected,
+} from './castPage'
+import { collectWarnings } from './warnings'
 import {
   estimatePageCount,
   estimateRuntimeMinutes,
@@ -62,7 +69,7 @@ const WORDS: Record<string, string> = {
   X: 'TEN',
 }
 
-const MAX_DIALOGUE_CHARS = 35
+const DUAL_COL_WIDTH = 28
 
 function pad(ch: string, inches: number): string {
   const cols = Math.round(inches * 10)
@@ -138,17 +145,45 @@ function buildTitlePage(settings: FormatSettings): string[] {
   return lines
 }
 
-function buildCastPagePlain(
-  elements: ScriptElement[],
+function formatDualDialoguePlain(
+  leftName: string,
+  leftText: string,
+  rightName: string,
+  rightText: string,
   settings: FormatSettings,
 ): string[] {
-  const names = collectCharacterNames(elements)
-  const lines: string[] = ['', pad(' ', 22) + 'CAST OF CHARACTERS', '', '']
-  for (const name of names.sort()) {
-    lines.push(pad(' ', settings.marginLeft * 10) + name)
+  const indent = pad(' ', settings.dialogueIndent)
+  const leftLines = leftText.split('\n')
+  const rightLines = rightText.split('\n')
+  const rows = Math.max(leftLines.length, rightLines.length)
+  const lines: string[] = [
+    indent +
+      leftName.toUpperCase().padEnd(DUAL_COL_WIDTH) +
+      rightName.toUpperCase(),
+  ]
+  for (let i = 0; i < rows; i++) {
+    const l = (leftLines[i] ?? '').slice(0, DUAL_COL_WIDTH - 1)
+    const r = (rightLines[i] ?? '').slice(0, DUAL_COL_WIDTH - 1)
+    lines.push(indent + l.padEnd(DUAL_COL_WIDTH) + r)
   }
-  lines.push('', '')
   return lines
+}
+
+function dualDialogueHtml(
+  leftName: string,
+  leftText: string,
+  rightName: string,
+  rightText: string,
+): string {
+  const leftDialogue = leftText
+    .split('\n')
+    .map((l) => `<p class="dialogue">${escapeHtml(l)}</p>`)
+    .join('')
+  const rightDialogue = rightText
+    .split('\n')
+    .map((l) => `<p class="dialogue">${escapeHtml(l)}</p>`)
+    .join('')
+  return `<div class="dual-dialogue"><div class="dual-col"><p class="character">${escapeHtml(leftName.toUpperCase())}</p>${leftDialogue}</div><div class="dual-col"><p class="character">${escapeHtml(rightName.toUpperCase())}</p>${rightDialogue}</div></div>`
 }
 
 function formatElement(
@@ -251,86 +286,6 @@ export function extractTitlePageInfo(elements: ScriptElement[]): {
   return { title, subtitle, author }
 }
 
-function collectWarnings(elements: ScriptElement[]): string[] {
-  const warnings: string[] = []
-  let hasCharacter = false
-  let hasDialogue = false
-  let orphanDialogue = 0
-  let longDialogue = 0
-  let lowercaseCharacter = 0
-  let sceneWithoutSetting = 0
-  const characterNames = new Map<string, string>()
-
-  for (let i = 0; i < elements.length; i++) {
-    const el = elements[i]
-
-    if (el.type === 'character') {
-      hasCharacter = true
-      const normalized = el.text.replace(/\s*\([^)]*\)/g, '').trim()
-      const upper = normalized.toUpperCase()
-      if (normalized !== upper) lowercaseCharacter++
-
-      const existing = characterNames.get(upper)
-      if (existing && existing !== el.text) {
-        warnings.push(
-          `Inconsistent character name: "${existing}" vs "${el.text}" — standardize spelling.`,
-        )
-      }
-      characterNames.set(upper, el.text)
-    }
-
-    if (el.type === 'dialogue') {
-      hasDialogue = true
-      const prev = elements
-        .slice(0, i)
-        .reverse()
-        .find((e) => e.type !== 'blank')
-      if (prev?.type !== 'character' && prev?.type !== 'parenthetical') {
-        orphanDialogue++
-      }
-      for (const line of el.text.split('\n')) {
-        if (line.length > MAX_DIALOGUE_CHARS) longDialogue++
-      }
-    }
-
-    if (el.type === 'scene') {
-      const next = elements.slice(i + 1).find((e) => e.type !== 'blank')
-      if (next?.type !== 'setting' && next?.type !== 'stage_direction') {
-        sceneWithoutSetting++
-      }
-    }
-  }
-
-  if (!hasCharacter && hasDialogue) {
-    warnings.push('Dialogue found without character names — check ALL CAPS formatting.')
-  }
-  if (orphanDialogue > 0) {
-    warnings.push(
-      `${orphanDialogue} dialogue block(s) may be missing a character cue above them.`,
-    )
-  }
-  if (!elements.some((e) => e.type === 'act' || e.type === 'scene')) {
-    warnings.push('No act or scene headings detected — consider adding ACT/SCENE markers.')
-  }
-  if (lowercaseCharacter > 0) {
-    warnings.push(
-      `${lowercaseCharacter} character name(s) are not ALL CAPS — use uppercase for cues.`,
-    )
-  }
-  if (longDialogue > 0) {
-    warnings.push(
-      `${longDialogue} dialogue line(s) exceed ~${MAX_DIALOGUE_CHARS} characters — may be too wide on the page.`,
-    )
-  }
-  if (sceneWithoutSetting > 0) {
-    warnings.push(
-      `${sceneWithoutSetting} scene heading(s) lack a setting line — add location/description.`,
-    )
-  }
-
-  return [...new Set(warnings)]
-}
-
 export function getScriptSections(
   raw: string,
   settings: FormatSettings = DEFAULT_SETTINGS,
@@ -366,6 +321,7 @@ export function formatScript(
   raw: string,
   settings: FormatSettings = DEFAULT_SETTINGS,
   typeOverrides: TypeOverrides = {},
+  castMetadata: CastMetadata = {},
 ): FormattedScript {
   const { elements: parsed, mergedSettings, bodyElements } = getScriptSections(
     raw,
@@ -374,27 +330,46 @@ export function formatScript(
   )
 
   const outputLines: string[] = []
-
   const characterNames = collectCharacterNames(parsed)
+  const castMembers = mergeCastWithDetected(characterNames, castMetadata)
 
   if (mergedSettings.showTitlePage) {
     outputLines.push(...buildTitlePage(mergedSettings))
     outputLines.push('', '—'.repeat(40), '')
   }
 
-  if (mergedSettings.showCastPage && characterNames.length > 0) {
-    outputLines.push(...buildCastPagePlain(parsed, mergedSettings))
+  if (mergedSettings.showCastPage && castMembers.length > 0) {
+    outputLines.push(...formatCastPagePlain(castMembers, mergedSettings.marginLeft))
     outputLines.push('', '—'.repeat(40), '')
   }
 
-  for (const el of bodyElements) {
-    const formatted = formatElement(el, mergedSettings, characterNames)
-    outputLines.push(...formatted)
-    if (el.type === 'character' && el.dualCharacter && el.dualDialogue) {
+  for (let i = 0; i < bodyElements.length; i++) {
+    const el = bodyElements[i]
+    const prev = bodyElements[i - 1]
+
+    if (
+      el.type === 'dialogue' &&
+      prev?.type === 'character' &&
+      prev.dualCharacter &&
+      prev.dualDialogue
+    ) {
       outputLines.push(
-        ...el.dualDialogue.split('\n').map((line) => pad(' ', mergedSettings.dialogueIndent) + line),
+        ...formatDualDialoguePlain(
+          prev.text,
+          el.text,
+          prev.dualCharacter,
+          prev.dualDialogue,
+          mergedSettings,
+        ),
       )
+      continue
     }
+
+    if (el.type === 'character' && el.dualCharacter && el.dualDialogue) {
+      continue
+    }
+
+    outputLines.push(...formatElement(el, mergedSettings, characterNames))
   }
 
   const pageCount = estimatePageCount(bodyElements, mergedSettings)
@@ -425,13 +400,8 @@ function elementToHtml(
       return `<p class="scene">SCENE ${escapeHtml(formatNumber(el.text, settings.actSceneStyle))}</p>`
     case 'setting':
       return `<p class="setting">${escapeHtml(formatStageDirection(capitalizeNamesInDirection(el.text, characterNames), settings.stageDirectionStyle))}</p>`
-    case 'character': {
-      let html = `<p class="character">${escapeHtml(el.text.toUpperCase())}</p>`
-      if (el.dualCharacter) {
-        html += `<p class="character dual">${escapeHtml(el.dualCharacter.toUpperCase())}</p>`
-      }
-      return html
-    }
+    case 'character':
+      return `<p class="character">${escapeHtml(el.text.toUpperCase())}</p>`
     case 'parenthetical':
       return `<p class="parenthetical">(${escapeHtml(el.text)})</p>`
     case 'dialogue':
@@ -458,10 +428,42 @@ function elementToHtml(
   }
 }
 
+function renderBodyHtml(
+  bodyElements: ScriptElement[],
+  settings: FormatSettings,
+  characterNames: string[],
+): string {
+  const chunks: string[] = []
+  for (let i = 0; i < bodyElements.length; i++) {
+    const el = bodyElements[i]
+    const prev = bodyElements[i - 1]
+
+    if (
+      el.type === 'dialogue' &&
+      prev?.type === 'character' &&
+      prev.dualCharacter &&
+      prev.dualDialogue
+    ) {
+      chunks.push(
+        dualDialogueHtml(prev.text, el.text, prev.dualCharacter, prev.dualDialogue),
+      )
+      continue
+    }
+
+    if (el.type === 'character' && el.dualCharacter && el.dualDialogue) {
+      continue
+    }
+
+    chunks.push(elementToHtml(el, settings, characterNames))
+  }
+  return chunks.join('\n')
+}
+
 export function formatScriptToHtml(
   raw: string,
   settings: FormatSettings = DEFAULT_SETTINGS,
   typeOverrides: TypeOverrides = {},
+  castMetadata: CastMetadata = {},
 ): string {
   const { elements, mergedSettings, bodyElements } = getScriptSections(
     raw,
@@ -470,6 +472,7 @@ export function formatScriptToHtml(
   )
 
   const characterNames = collectCharacterNames(elements)
+  const castMembers = mergeCastWithDetected(characterNames, castMetadata)
   const parts: string[] = []
 
   if (mergedSettings.showTitlePage) {
@@ -494,18 +497,13 @@ export function formatScriptToHtml(
     parts.push('</div>')
   }
 
-  if (mergedSettings.showCastPage && characterNames.length > 0) {
-    parts.push('<div class="cast-page">')
-    parts.push('<h2>Cast of Characters</h2>')
-    parts.push('<ul>')
-    for (const name of [...characterNames].sort()) {
-      parts.push(`<li>${escapeHtml(name)}</li>`)
-    }
-    parts.push('</ul></div>')
+  if (mergedSettings.showCastPage && castMembers.length > 0) {
+    parts.push(formatCastPageHtml(castMembers))
   }
 
   const frontMatterPages =
-    (mergedSettings.showTitlePage ? 1 : 0) + (mergedSettings.showCastPage ? 1 : 0)
+    (mergedSettings.showTitlePage ? 1 : 0) +
+    (mergedSettings.showCastPage && castMembers.length > 0 ? 1 : 0)
 
   const pages = paginateElements(bodyElements, mergedSettings, frontMatterPages > 0)
   const scriptPages = pages.slice(frontMatterPages)
@@ -521,26 +519,13 @@ export function formatScriptToHtml(
       )
     }
 
-    for (const el of page.elements) {
-      parts.push(elementToHtml(el, mergedSettings, characterNames))
-      if (el.type === 'character' && el.dualCharacter && el.dualDialogue) {
-        parts.push(
-          el.dualDialogue
-            .split('\n')
-            .map((line) => `<p class="dialogue dual">${escapeHtml(line)}</p>`)
-            .join(''),
-        )
-      }
-    }
-
+    parts.push(renderBodyHtml(page.elements, mergedSettings, characterNames))
     parts.push('</div>')
   })
 
   if (scriptPages.length === 0 && bodyElements.length > 0) {
     parts.push('<div class="script-page-body" data-page="1">')
-    for (const el of bodyElements) {
-      parts.push(elementToHtml(el, mergedSettings, characterNames))
-    }
+    parts.push(renderBodyHtml(bodyElements, mergedSettings, characterNames))
     parts.push('</div>')
   }
 

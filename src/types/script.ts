@@ -30,6 +30,15 @@ export interface TitlePageInfo {
   copyright: string
 }
 
+export interface CastMember {
+  name: string
+  age: string
+  gender: string
+  description: string
+}
+
+export type CastMetadata = Record<string, CastMember>
+
 export type FormatPresetId =
   | 'dramatists-guild'
   | 'us-stage'
@@ -61,14 +70,20 @@ export interface FormatSettings {
   marginTop: number
   marginBottom: number
   lyricsStyle: LyricsStyle
-  /** First numbered script page (DG: page 1 is first page of play text). */
   pageNumberStartsAt: number
+}
+
+export interface ScriptWarning {
+  id: string
+  message: string
+  lineNumber?: number
+  fix?: string
 }
 
 export interface FormattedScript {
   elements: ScriptElement[]
   plainText: string
-  warnings: string[]
+  warnings: ScriptWarning[]
   pageCount: number
   estimatedRuntimeMinutes: number
 }
@@ -79,6 +94,7 @@ export interface ScriptProject {
   rawScript: string
   settings: FormatSettings
   typeOverrides: Record<number, ScriptElementType>
+  castMetadata: CastMetadata
   updatedAt: number
 }
 

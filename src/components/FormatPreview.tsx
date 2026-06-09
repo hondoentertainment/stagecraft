@@ -1,5 +1,5 @@
 import { useMemo } from 'react'
-import type { FormatSettings, TypeOverrides } from '../types/script'
+import type { CastMetadata, FormatSettings, TypeOverrides } from '../types/script'
 import { dialogueMaxWidth, stageDirectionMaxWidth } from '../lib/dramatistsGuild'
 import { formatScriptToHtml } from '../lib/formatter'
 
@@ -7,16 +7,18 @@ interface FormatPreviewProps {
   rawScript: string
   settings: FormatSettings
   typeOverrides?: TypeOverrides
+  castMetadata?: CastMetadata
 }
 
 export function FormatPreview({
   rawScript,
   settings,
   typeOverrides = {},
+  castMetadata = {},
 }: FormatPreviewProps) {
   const html = useMemo(
-    () => formatScriptToHtml(rawScript, settings, typeOverrides),
-    [rawScript, settings, typeOverrides],
+    () => formatScriptToHtml(rawScript, settings, typeOverrides, castMetadata),
+    [rawScript, settings, typeOverrides, castMetadata],
   )
 
   const directionWidth = stageDirectionMaxWidth(settings)
@@ -92,6 +94,27 @@ export function FormatPreview({
         }
         .script-page .cast-page li {
           margin: 0.4em 0;
+        }
+        .script-page .cast-page .cast-meta {
+          font-weight: 400;
+        }
+        .script-page .cast-page .cast-desc {
+          font-weight: 400;
+        }
+        .script-page .dual-dialogue {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 0.5in;
+          margin: 1em 0;
+          padding-left: ${Math.max(0, settings.dialogueIndent - settings.marginLeft)}in;
+        }
+        .script-page .dual-dialogue .character {
+          padding-left: 0;
+          margin-top: 0;
+        }
+        .script-page .dual-dialogue .dialogue {
+          padding-left: 0;
+          max-width: none;
         }
         .script-page .script-page-body {
           position: relative;

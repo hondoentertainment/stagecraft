@@ -43,12 +43,20 @@ export function ScriptOutline({
       {formatted.warnings.length > 0 && (
         <div className="mb-4 space-y-2">
           {formatted.warnings.map((warning) => (
-            <p
-              key={warning}
-              className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-200"
+            <button
+              key={warning.id}
+              type="button"
+              onClick={() => warning.lineNumber && onLineClick(warning.lineNumber)}
+              className="block w-full rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-left text-xs text-amber-200 transition hover:bg-amber-500/20"
             >
-              {warning}
-            </p>
+              <span>{warning.message}</span>
+              {warning.fix && (
+                <span className="mt-1 block text-amber-400/80">Fix: {warning.fix}</span>
+              )}
+              {warning.lineNumber && (
+                <span className="mt-0.5 block text-amber-600">Line {warning.lineNumber}</span>
+              )}
+            </button>
           ))}
         </div>
       )}
@@ -63,6 +71,14 @@ export function ScriptOutline({
       </div>
 
       <ul className="flex-1 space-y-1 overflow-y-auto pr-1">
+        {visible.length === 0 && (
+          <li className="rounded-lg border border-dashed border-zinc-800 px-4 py-8 text-center">
+            <p className="text-sm text-zinc-500">No script content yet</p>
+            <p className="mt-1 text-xs text-zinc-600">
+              Paste or upload a script to see its structure here.
+            </p>
+          </li>
+        )}
         {visible.map((el, i) => {
           const isOverridden = typeOverrides[el.lineNumber] !== undefined
           return (

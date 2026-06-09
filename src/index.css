@@ -47,6 +47,12 @@ body {
   opacity: 0.9;
 }
 
+.btn-primary:disabled,
+.btn-secondary:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
 .btn-secondary {
   border-radius: 0.5rem;
   border: 1px solid rgb(63 63 70);
@@ -60,6 +66,29 @@ body {
 
 .btn-secondary:hover {
   background: rgb(39 39 42);
+}
+
+.btn-primary:focus-visible,
+.btn-secondary:focus-visible,
+.input-field:focus-visible {
+  outline: 2px solid rgb(245 158 11 / 0.7);
+  outline-offset: 2px;
+}
+
+:focus-visible {
+  outline: 2px solid rgb(245 158 11 / 0.7);
+  outline-offset: 2px;
+}
+
+.safe-bottom {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+@media (max-width: 640px) {
+  .input-field,
+  textarea.input-field {
+    font-size: 1rem;
+  }
 }
 
 @media print {

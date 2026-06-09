@@ -12,9 +12,15 @@ Professional playwright script formatter. Paste a raw script and get industry-st
 - **Type overrides** — Correct parser mistakes from the structure outline
 - **Import** — `.txt`, `.docx`, `.fountain`, `.fdx`, `.md` with Fountain-aware parsing
 - **Export** — `.txt`, `.docx`, `.pdf`, `.fountain`, `.fdx`, submission ZIP, print/PDF
+- **Cast page** — Rich cast metadata (age, gender, description) merged with detected characters; included in PDF, DOCX, and submission ZIP
+- **Script warnings** — Inline fixes for ALL CAPS cues, orphan dialogue, long lines, and missing settings; click to jump to the line
+- **Dual dialogue** — Side-by-side columns in preview, PDF, and plain-text export
+- **Share links** — Copy a compressed URL hash to share script + settings with collaborators
 - **Reports** — Cast list, scene breakdown, page count, runtime estimate
 - **Projects** — Save/load scripts with autosave to local storage
+- **PWA** — Installable app with offline caching via service worker
 - **Keyboard shortcuts** — `Ctrl+S` save project, `Ctrl+P` print
+- **CI** — GitHub Actions runs lint, unit tests, build, and Playwright E2E on every push
 
 ## Getting Started
 
@@ -44,7 +50,8 @@ Open [http://localhost:5173](http://localhost:5173).
 npm run dev       # Start dev server
 npm run build     # Production build
 npm run preview   # Preview production build
-npm run test      # Run test suite
+npm run test      # Unit tests (Vitest)
+npm run test:e2e  # End-to-end tests (Playwright)
 npm run lint      # ESLint
 ```
 

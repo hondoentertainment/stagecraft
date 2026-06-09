@@ -20,7 +20,7 @@ describe('formatScript', () => {
     const raw = `MARCUS
 Hello there.`
     const result = formatScript(raw, DEFAULT_SETTINGS)
-    expect(result.warnings.some((w) => w.includes('act or scene'))).toBe(true)
+    expect(result.warnings.some((w) => w.message.includes('act or scene'))).toBe(true)
   })
 
   it('respects title page setting', () => {

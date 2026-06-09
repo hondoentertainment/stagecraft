@@ -1,3 +1,4 @@
+import { useModal } from '../hooks/useModal'
 import type { FormatPresetId, FormatSettings } from '../types/script'
 import { FORMAT_PRESETS, applyPreset } from '../lib/presets'
 
@@ -31,6 +32,8 @@ export function SettingsPanel({
   open,
   onClose,
 }: SettingsPanelProps) {
+  const panelRef = useModal<HTMLElement>(open, onClose)
+
   if (!open) return null
 
   const update = <K extends keyof FormatSettings>(key: K, value: FormatSettings[K]) => {
@@ -57,9 +60,17 @@ export function SettingsPanel({
         aria-label="Close settings"
         onClick={onClose}
       />
-      <aside className="relative h-full w-full max-w-md overflow-y-auto border-l border-zinc-800 bg-zinc-950 p-6 shadow-2xl">
+      <aside
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="settings-panel-title"
+        className="relative h-full w-full max-w-md overflow-y-auto border-l border-zinc-800 bg-zinc-950 p-6 shadow-2xl"
+      >
         <div className="mb-6 flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-white">Format Settings</h2>
+          <h2 id="settings-panel-title" className="text-lg font-semibold text-white">
+            Format Settings
+          </h2>
           <button
             type="button"
             onClick={onClose}

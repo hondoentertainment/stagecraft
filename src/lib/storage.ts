@@ -1,14 +1,21 @@
-import type { FormatSettings, ScriptProject, TypeOverrides } from '../types/script'
+import type {
+  CastMetadata,
+  FormatSettings,
+  ScriptProject,
+  TypeOverrides,
+} from '../types/script'
 import { DEFAULT_SETTINGS } from '../types/script'
 
 const DRAFT_KEY = 'stagecraft-draft'
 const PROJECTS_KEY = 'stagecraft-projects'
 const ACTIVE_PROJECT_KEY = 'stagecraft-active-project'
+const ONBOARDED_KEY = 'stagecraft-onboarded'
 
 export interface DraftState {
   rawScript: string
   settings: FormatSettings
   typeOverrides: TypeOverrides
+  castMetadata: CastMetadata
   savedAt: number
 }
 
@@ -16,11 +23,13 @@ export function saveDraft(
   rawScript: string,
   settings: FormatSettings,
   typeOverrides: TypeOverrides,
+  castMetadata: CastMetadata = {},
 ): void {
   const draft: DraftState = {
     rawScript,
     settings,
     typeOverrides,
+    castMetadata,
     savedAt: Date.now(),
   }
   try {
@@ -39,6 +48,7 @@ export function loadDraft(): DraftState | null {
       ...draft,
       settings: { ...DEFAULT_SETTINGS, ...draft.settings },
       typeOverrides: draft.typeOverrides ?? {},
+      castMetadata: draft.castMetadata ?? {},
     }
   } catch {
     return null
@@ -49,11 +59,22 @@ export function clearDraft(): void {
   localStorage.removeItem(DRAFT_KEY)
 }
 
+export function hasCompletedOnboarding(): boolean {
+  return localStorage.getItem(ONBOARDED_KEY) === '1'
+}
+
+export function markOnboardingComplete(): void {
+  localStorage.setItem(ONBOARDED_KEY, '1')
+}
+
 export function listProjects(): ScriptProject[] {
   try {
     const raw = localStorage.getItem(PROJECTS_KEY)
     if (!raw) return []
-    return JSON.parse(raw) as ScriptProject[]
+    return (JSON.parse(raw) as ScriptProject[]).map((p) => ({
+      ...p,
+      castMetadata: p.castMetadata ?? {},
+    }))
   } catch {
     return []
   }
@@ -93,6 +114,7 @@ export function createProject(
   rawScript: string,
   settings: FormatSettings,
   typeOverrides: TypeOverrides = {},
+  castMetadata: CastMetadata = {},
 ): ScriptProject {
   return {
     id: crypto.randomUUID(),
@@ -100,6 +122,7 @@ export function createProject(
     rawScript,
     settings,
     typeOverrides,
+    castMetadata,
     updatedAt: Date.now(),
   }
 }

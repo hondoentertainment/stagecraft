@@ -10,8 +10,9 @@ import {
   TextRun,
   convertInchesToTwip,
 } from 'docx'
-import type { FormatSettings, ScriptElement } from '../types/script'
+import type { CastMetadata, FormatSettings, ScriptElement } from '../types/script'
 import { DEFAULT_SETTINGS } from '../types/script'
+import { formatCastEntry, mergeCastWithDetected } from './castPage'
 import {
   collectCharacterNames,
   formatNumber,
@@ -125,7 +126,7 @@ function buildTitlePageParagraphs(settings: FormatSettings): Paragraph[] {
 }
 
 function buildCastPageParagraphs(
-  characterNames: string[],
+  members: ReturnType<typeof mergeCastWithDetected>,
   settings: FormatSettings,
 ): Paragraph[] {
   const paragraphs: Paragraph[] = [
@@ -140,11 +141,11 @@ function buildCastPageParagraphs(
     }),
   ]
 
-  for (const name of characterNames.sort()) {
+  for (const member of members) {
     paragraphs.push(
       new Paragraph({
         indent: { left: convertInchesToTwip(settings.marginLeft) },
-        children: [scriptRun(name, settings)],
+        children: [scriptRun(formatCastEntry(member), settings)],
         spacing: { after: 80 },
       }),
     )
@@ -368,17 +369,19 @@ function elementToParagraphs(
 export async function buildScriptDocx(
   raw: string,
   settings: FormatSettings = DEFAULT_SETTINGS,
+  castMetadata: CastMetadata = {},
 ): Promise<Blob> {
   const { elements, mergedSettings, bodyElements } = getScriptSections(raw, settings)
   const characterNames = collectCharacterNames(elements)
+  const castMembers = mergeCastWithDetected(characterNames, castMetadata)
   const children: Paragraph[] = []
 
   if (mergedSettings.showTitlePage) {
     children.push(...buildTitlePageParagraphs(mergedSettings))
   }
 
-  if (mergedSettings.showCastPage && characterNames.length > 0) {
-    children.push(...buildCastPageParagraphs(characterNames, mergedSettings))
+  if (mergedSettings.showCastPage && castMembers.length > 0) {
+    children.push(...buildCastPageParagraphs(castMembers, mergedSettings))
   }
 
   for (const el of bodyElements) {
@@ -451,8 +454,9 @@ export async function buildScriptDocx(
 export async function downloadScriptDocx(
   raw: string,
   settings: FormatSettings = DEFAULT_SETTINGS,
+  castMetadata: CastMetadata = {},
 ): Promise<void> {
-  const blob = await buildScriptDocx(raw, settings)
+  const blob = await buildScriptDocx(raw, settings, castMetadata)
   const name = sanitizeFilename(settings.titlePage.title || 'play-script')
   downloadBlob(
     blob,

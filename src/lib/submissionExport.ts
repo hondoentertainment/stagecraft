@@ -1,5 +1,5 @@
 import JSZip from 'jszip'
-import type { FormatSettings } from '../types/script'
+import type { CastMetadata, FormatSettings } from '../types/script'
 import { DEFAULT_SETTINGS } from '../types/script'
 import { formatScript } from './formatter'
 import { buildScriptPdf } from './pdfExport'
@@ -13,15 +13,16 @@ import { downloadBlob, sanitizeFilename } from './export'
 export async function buildSubmissionPackage(
   raw: string,
   settings: FormatSettings = DEFAULT_SETTINGS,
+  castMetadata: CastMetadata = {},
 ): Promise<Blob> {
   const zip = new JSZip()
   const name = sanitizeFilename(settings.titlePage.title || 'play-script')
-  const formatted = formatScript(raw, settings)
+  const formatted = formatScript(raw, settings, {}, castMetadata)
   const report = generateScriptReport(formatted.elements, settings)
 
   zip.file(`${name}.txt`, formatted.plainText)
 
-  const pdf = await buildScriptPdf(raw, settings)
+  const pdf = await buildScriptPdf(raw, settings, castMetadata)
   zip.file(`${name}.pdf`, pdf)
 
   zip.file('cast-of-characters.txt', formatCharacterListReport(report))
@@ -56,8 +57,9 @@ export async function buildSubmissionPackage(
 export async function downloadSubmissionPackage(
   raw: string,
   settings: FormatSettings = DEFAULT_SETTINGS,
+  castMetadata: CastMetadata = {},
 ): Promise<void> {
-  const blob = await buildSubmissionPackage(raw, settings)
+  const blob = await buildSubmissionPackage(raw, settings, castMetadata)
   const name = sanitizeFilename(settings.titlePage.title || 'play-script')
   downloadBlob(blob, `${name}-submission.zip`, 'application/zip')
 }

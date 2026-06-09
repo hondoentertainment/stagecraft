@@ -1,5 +1,8 @@
-import { useCallback, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useModal } from './hooks/useModal'
+import { CastPanel } from './components/CastPanel'
 import { FormatPreview } from './components/FormatPreview'
+import { OnboardingModal } from './components/OnboardingModal'
 import { ProjectsPanel } from './components/ProjectsPanel'
 import { ReportsPanel } from './components/ReportsPanel'
 import { ScriptOutline } from './components/ScriptOutline'
@@ -10,12 +13,25 @@ import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts'
 import { copyToClipboard, downloadText, printScript, sanitizeFilename } from './lib/export'
 import { formatScript } from './lib/formatter'
 import { deriveTitleFromImport } from './lib/importScript'
-import { createProject, loadDraft, saveProject } from './lib/storage'
+import { applyPreset } from './lib/presets'
+import { buildShareUrl, decodeShareLink } from './lib/share'
+import {
+  createProject,
+  hasCompletedOnboarding,
+  loadDraft,
+  saveProject,
+} from './lib/storage'
 import { DEFAULT_SETTINGS, SAMPLE_SCRIPT } from './types/script'
-import type { FormatSettings, ScriptElementType, ScriptProject, TypeOverrides } from './types/script'
+import type {
+  CastMetadata,
+  FormatSettings,
+  ScriptElementType,
+  ScriptProject,
+  TypeOverrides,
+} from './types/script'
 
 type View = 'split' | 'editor' | 'preview'
-type SidebarTab = 'outline' | 'reports' | 'tips'
+type SidebarTab = 'outline' | 'cast' | 'reports' | 'tips'
 
 export default function App() {
   const draft = loadDraft()
@@ -26,6 +42,11 @@ export default function App() {
   const [typeOverrides, setTypeOverrides] = useState<TypeOverrides>(
     draft?.typeOverrides ?? {},
   )
+  const [castMetadata, setCastMetadata] = useState<CastMetadata>(
+    draft?.castMetadata ?? {},
+  )
+  const [onboardingOpen, setOnboardingOpen] = useState(!hasCompletedOnboarding())
+  const [shareCopied, setShareCopied] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [projectsOpen, setProjectsOpen] = useState(false)
   const [view, setView] = useState<View>('split')
@@ -33,13 +54,34 @@ export default function App() {
   const [exporting, setExporting] = useState<string | null>(null)
   const [sidebarTab, setSidebarTab] = useState<SidebarTab>('outline')
   const [savedFlash, setSavedFlash] = useState(false)
+  const [mobileToolsOpen, setMobileToolsOpen] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
-  useAutosave(rawScript, settings, typeOverrides)
+  const autosaveStatus = useAutosave(
+    rawScript,
+    settings,
+    typeOverrides,
+    castMetadata,
+  )
+
+  useEffect(() => {
+    const hash = window.location.hash
+    if (!hash.startsWith('#s=')) return
+    void decodeShareLink(hash).then((payload) => {
+      if (!payload) return
+      setRawScript(payload.script)
+      if (payload.settings) {
+        setSettings((prev) => ({ ...prev, ...payload.settings }))
+      }
+      if (payload.typeOverrides) setTypeOverrides(payload.typeOverrides)
+      if (payload.castMetadata) setCastMetadata(payload.castMetadata)
+      window.history.replaceState(null, '', window.location.pathname)
+    })
+  }, [])
 
   const formatted = useMemo(
-    () => formatScript(rawScript, settings, typeOverrides),
-    [rawScript, settings, typeOverrides],
+    () => formatScript(rawScript, settings, typeOverrides, castMetadata),
+    [rawScript, settings, typeOverrides, castMetadata],
   )
 
   const handleSaveProject = useCallback(() => {
@@ -48,11 +90,12 @@ export default function App() {
       rawScript,
       settings,
       typeOverrides,
+      castMetadata,
     )
     saveProject(project)
     setSavedFlash(true)
     setTimeout(() => setSavedFlash(false), 2000)
-  }, [rawScript, settings, typeOverrides])
+  }, [rawScript, settings, typeOverrides, castMetadata])
 
   useKeyboardShortcuts({
     onSave: handleSaveProject,
@@ -88,16 +131,16 @@ export default function App() {
   const handleDownloadDocx = useCallback(() => {
     void runExport('docx', async () => {
       const { downloadScriptDocx } = await import('./lib/docxExport')
-      await downloadScriptDocx(rawScript, settings)
+      await downloadScriptDocx(rawScript, settings, castMetadata)
     })
-  }, [rawScript, settings, runExport])
+  }, [rawScript, settings, castMetadata, runExport])
 
   const handleDownloadPdf = useCallback(() => {
     void runExport('pdf', async () => {
       const { downloadScriptPdf } = await import('./lib/pdfExport')
-      await downloadScriptPdf(rawScript, settings)
+      await downloadScriptPdf(rawScript, settings, castMetadata)
     })
-  }, [rawScript, settings, runExport])
+  }, [rawScript, settings, castMetadata, runExport])
 
   const handleDownloadFountain = useCallback(() => {
     void runExport('fountain', async () => {
@@ -116,9 +159,24 @@ export default function App() {
   const handleDownloadSubmission = useCallback(() => {
     void runExport('zip', async () => {
       const { downloadSubmissionPackage } = await import('./lib/submissionExport')
-      await downloadSubmissionPackage(rawScript, settings)
+      await downloadSubmissionPackage(rawScript, settings, castMetadata)
     })
-  }, [rawScript, settings, runExport])
+  }, [rawScript, settings, castMetadata, runExport])
+
+  const handleShare = useCallback(async () => {
+    const url = await buildShareUrl(window.location.origin, {
+      v: 1,
+      script: rawScript,
+      settings,
+      typeOverrides,
+      castMetadata,
+    })
+    const ok = await copyToClipboard(url)
+    if (ok) {
+      setShareCopied(true)
+      setTimeout(() => setShareCopied(false), 2000)
+    }
+  }, [rawScript, settings, typeOverrides, castMetadata])
 
   const handlePrint = useCallback(() => {
     printScript(settings)
@@ -127,6 +185,7 @@ export default function App() {
   const handleImport = useCallback((text: string, filename: string) => {
     setRawScript(text)
     setTypeOverrides({})
+    setCastMetadata({})
     setSettings((prev) => ({
       ...prev,
       titlePage: {
@@ -161,7 +220,12 @@ export default function App() {
     setRawScript(project.rawScript)
     setSettings(project.settings)
     setTypeOverrides(project.typeOverrides)
+    setCastMetadata(project.castMetadata ?? {})
   }, [])
+
+  const handleApplyDgFormat = useCallback(() => {
+    setSettings(applyPreset('dramatists-guild', settings))
+  }, [settings])
 
   return (
     <div className="flex min-h-screen flex-col">
@@ -177,9 +241,7 @@ export default function App() {
               </h1>
               <p className="hidden text-xs text-zinc-500 sm:block">
                 Professional playwright formatter
-                {savedFlash && (
-                  <span className="ml-2 text-emerald-400">· Saved</span>
-                )}
+                <SaveStatus savedFlash={savedFlash} autosaveStatus={autosaveStatus} />
               </p>
             </div>
           </div>
@@ -189,10 +251,32 @@ export default function App() {
 
             <button
               type="button"
+              onClick={handleSaveProject}
+              title="Save project (Ctrl+S)"
+              className="btn-secondary hidden sm:inline-flex"
+            >
+              {savedFlash ? 'Saved!' : 'Save'}
+            </button>
+            <button
+              type="button"
               onClick={() => setProjectsOpen(true)}
               className="btn-secondary hidden sm:inline-flex"
             >
               Projects
+            </button>
+            <button
+              type="button"
+              onClick={() => void handleShare()}
+              className="btn-secondary hidden sm:inline-flex"
+            >
+              {shareCopied ? 'Link copied!' : 'Share'}
+            </button>
+            <button
+              type="button"
+              onClick={handleApplyDgFormat}
+              className="btn-secondary hidden md:inline-flex"
+            >
+              DG format
             </button>
             <button
               type="button"
@@ -217,7 +301,7 @@ export default function App() {
         </div>
       </header>
 
-      <main className="mx-auto flex w-full max-w-[1800px] flex-1 flex-col gap-0 lg:flex-row">
+      <main className="mx-auto flex w-full max-w-[1800px] flex-1 flex-col gap-0 pb-[52px] lg:flex-row lg:pb-0">
         {(view === 'split' || view === 'editor') && (
           <section className="no-print flex min-h-[40vh] flex-1 flex-col border-b border-zinc-800 lg:min-h-0 lg:max-w-[50%] lg:border-b-0 lg:border-r">
             <ScriptUpload
@@ -225,6 +309,7 @@ export default function App() {
               onLoadSample={() => {
                 setRawScript(SAMPLE_SCRIPT)
                 setTypeOverrides({})
+                setCastMetadata({})
               }}
             >
               <textarea
@@ -233,7 +318,8 @@ export default function App() {
                 onChange={(e) => setRawScript(e.target.value)}
                 spellCheck={false}
                 placeholder="Paste, type, or upload a script (.txt, .docx, .fountain, .fdx, .md)…"
-                className="min-h-[300px] flex-1 resize-none bg-transparent px-4 py-4 font-[family-name:var(--font-script)] text-sm leading-relaxed text-zinc-200 outline-none placeholder:text-zinc-600 lg:min-h-0"
+                aria-label="Raw script editor"
+                className="min-h-[300px] flex-1 resize-none bg-transparent px-4 py-4 font-[family-name:var(--font-script)] text-base leading-relaxed text-zinc-200 outline-none placeholder:text-zinc-600 sm:text-sm lg:min-h-0"
               />
             </ScriptUpload>
           </section>
@@ -248,18 +334,25 @@ export default function App() {
                   {formatted.pageCount} pages · ~{formatted.estimatedRuntimeMinutes} min
                 </span>
               </h2>
-              <div className="flex gap-2 sm:hidden">
+              <div className="flex gap-3 sm:hidden">
+                <button
+                  type="button"
+                  onClick={handleSaveProject}
+                  className="min-h-[44px] text-xs text-zinc-500 transition hover:text-zinc-300"
+                >
+                  {savedFlash ? 'Saved' : 'Save'}
+                </button>
                 <button
                   type="button"
                   onClick={() => setProjectsOpen(true)}
-                  className="text-xs text-zinc-500 transition hover:text-zinc-300"
+                  className="min-h-[44px] text-xs text-zinc-500 transition hover:text-zinc-300"
                 >
                   Projects
                 </button>
                 <button
                   type="button"
                   onClick={() => setSettingsOpen(true)}
-                  className="text-xs text-zinc-500 transition hover:text-zinc-300"
+                  className="min-h-[44px] text-xs text-zinc-500 transition hover:text-zinc-300"
                 >
                   Settings
                 </button>
@@ -272,17 +365,28 @@ export default function App() {
                   rawScript={rawScript}
                   settings={settings}
                   typeOverrides={typeOverrides}
+                  castMetadata={castMetadata}
                 />
               </div>
 
               {view === 'split' && (
-                <aside className="no-print flex w-72 shrink-0 flex-col border-l border-zinc-800 bg-zinc-950/50 p-4 lg:w-64 xl:w-72">
-                  <div className="mb-3 flex gap-1 rounded-lg bg-zinc-900 p-1">
+                <aside className="no-print hidden w-72 shrink-0 flex-col border-l border-zinc-800 bg-zinc-950/50 p-4 lg:flex lg:w-64 xl:w-72">
+                  <div
+                    className="mb-3 flex gap-1 rounded-lg bg-zinc-900 p-1"
+                    role="tablist"
+                    aria-label="Script tools"
+                  >
                     <TabButton
                       active={sidebarTab === 'outline'}
                       onClick={() => setSidebarTab('outline')}
                     >
                       Outline
+                    </TabButton>
+                    <TabButton
+                      active={sidebarTab === 'cast'}
+                      onClick={() => setSidebarTab('cast')}
+                    >
+                      Cast
                     </TabButton>
                     <TabButton
                       active={sidebarTab === 'reports'}
@@ -308,6 +412,13 @@ export default function App() {
                         onLineClick={handleLineClick}
                       />
                     )}
+                    {sidebarTab === 'cast' && (
+                      <CastPanel
+                        rawScript={rawScript}
+                        castMetadata={castMetadata}
+                        onChange={setCastMetadata}
+                      />
+                    )}
                     {sidebarTab === 'reports' && (
                       <ReportsPanel rawScript={rawScript} settings={settings} />
                     )}
@@ -327,22 +438,178 @@ export default function App() {
         onClose={() => setSettingsOpen(false)}
       />
 
+      <OnboardingModal
+        open={onboardingOpen}
+        currentSettings={settings}
+        onApply={(s, script) => {
+          setSettings(s)
+          setRawScript(script)
+          setTypeOverrides({})
+          setCastMetadata({})
+        }}
+        onClose={() => setOnboardingOpen(false)}
+      />
+
       <ProjectsPanel
         open={projectsOpen}
         onClose={() => setProjectsOpen(false)}
         rawScript={rawScript}
         settings={settings}
         typeOverrides={typeOverrides}
+        castMetadata={castMetadata}
         onLoadProject={handleLoadProject}
       />
 
+      {(view === 'split' || view === 'preview') && (
+        <MobileToolsBar
+          sidebarTab={sidebarTab}
+          onTabChange={setSidebarTab}
+          open={mobileToolsOpen}
+          onOpenChange={setMobileToolsOpen}
+        >
+          {sidebarTab === 'outline' && (
+            <ScriptOutline
+              rawScript={rawScript}
+              settings={settings}
+              typeOverrides={typeOverrides}
+              onTypeOverride={handleTypeOverride}
+              onLineClick={(line) => {
+                handleLineClick(line)
+                setMobileToolsOpen(false)
+                if (view === 'preview') setView('split')
+              }}
+            />
+          )}
+          {sidebarTab === 'cast' && (
+            <CastPanel
+              rawScript={rawScript}
+              castMetadata={castMetadata}
+              onChange={setCastMetadata}
+            />
+          )}
+          {sidebarTab === 'cast' && (
+            <CastPanel
+              rawScript={rawScript}
+              castMetadata={castMetadata}
+              onChange={setCastMetadata}
+            />
+          )}
+          {sidebarTab === 'reports' && (
+            <ReportsPanel rawScript={rawScript} settings={settings} />
+          )}
+          {sidebarTab === 'tips' && <FormattingGuide />}
+        </MobileToolsBar>
+      )}
+
       <div className="hidden print-only">
-        <FormatPreview
-          rawScript={rawScript}
-          settings={settings}
-          typeOverrides={typeOverrides}
-        />
+                <FormatPreview
+                  rawScript={rawScript}
+                  settings={settings}
+                  typeOverrides={typeOverrides}
+                  castMetadata={castMetadata}
+                />
       </div>
+    </div>
+  )
+}
+
+function SaveStatus({
+  savedFlash,
+  autosaveStatus,
+}: {
+  savedFlash: boolean
+  autosaveStatus: 'idle' | 'pending' | 'saved'
+}) {
+  if (savedFlash) {
+    return <span className="ml-2 text-emerald-400">· Project saved</span>
+  }
+  if (autosaveStatus === 'pending') {
+    return <span className="ml-2 text-zinc-600">· Saving draft…</span>
+  }
+  if (autosaveStatus === 'saved') {
+    return <span className="ml-2 text-emerald-400/80">· Draft saved</span>
+  }
+  return null
+}
+
+function MobileToolsBar({
+  sidebarTab,
+  onTabChange,
+  open,
+  onOpenChange,
+  children,
+}: {
+  sidebarTab: SidebarTab
+  onTabChange: (tab: SidebarTab) => void
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  children: React.ReactNode
+}) {
+  const sheetRef = useModal<HTMLDivElement>(open, () => onOpenChange(false))
+  const tabs: { id: SidebarTab; label: string }[] = [
+    { id: 'outline', label: 'Outline' },
+    { id: 'cast', label: 'Cast' },
+    { id: 'reports', label: 'Reports' },
+    { id: 'tips', label: 'Guide' },
+  ]
+
+  return (
+    <div className="no-print lg:hidden">
+      <nav
+        className="safe-bottom fixed inset-x-0 bottom-0 z-30 flex border-t border-zinc-800 bg-zinc-950/95 backdrop-blur-md"
+        aria-label="Script tools"
+      >
+        {tabs.map((tab) => (
+          <button
+            key={tab.id}
+            type="button"
+            onClick={() => {
+              onTabChange(tab.id)
+              onOpenChange(true)
+            }}
+            aria-current={open && sidebarTab === tab.id ? 'page' : undefined}
+            className={`flex min-h-[52px] flex-1 flex-col items-center justify-center gap-0.5 text-[11px] font-medium transition ${
+              open && sidebarTab === tab.id
+                ? 'text-amber-400'
+                : 'text-zinc-500 hover:text-zinc-300'
+            }`}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </nav>
+
+      {open && (
+        <>
+          <button
+            type="button"
+            className="fixed inset-0 z-40 bg-black/50"
+            aria-label="Close script tools"
+            onClick={() => onOpenChange(false)}
+          />
+          <div
+            ref={sheetRef}
+            role="dialog"
+            aria-modal="true"
+            aria-label={`${tabs.find((t) => t.id === sidebarTab)?.label ?? 'Script'} panel`}
+            className="safe-bottom fixed inset-x-0 bottom-[52px] z-50 flex max-h-[60vh] flex-col rounded-t-2xl border border-b-0 border-zinc-800 bg-zinc-950 shadow-2xl"
+          >
+            <div className="flex items-center justify-between border-b border-zinc-800 px-4 py-3">
+              <h2 className="text-sm font-semibold text-white">
+                {tabs.find((t) => t.id === sidebarTab)?.label}
+              </h2>
+              <button
+                type="button"
+                onClick={() => onOpenChange(false)}
+                className="rounded-lg px-3 py-1.5 text-sm text-zinc-400 transition hover:bg-zinc-800 hover:text-white"
+              >
+                Close
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-4">{children}</div>
+          </div>
+        </>
+      )}
     </div>
   )
 }
@@ -361,13 +628,19 @@ function ViewToggle({
   ]
 
   return (
-    <div className="flex rounded-lg bg-zinc-900 p-1">
+    <div
+      className="flex rounded-lg bg-zinc-900 p-1"
+      role="tablist"
+      aria-label="Editor view"
+    >
       {options.map((opt) => (
         <button
           key={opt.id}
           type="button"
+          role="tab"
+          aria-selected={view === opt.id}
           onClick={() => onChange(opt.id)}
-          className={`rounded-md px-2.5 py-1 text-xs font-medium transition sm:px-3 ${
+          className={`min-h-[36px] rounded-md px-2.5 py-1 text-xs font-medium transition sm:px-3 ${
             view === opt.id
               ? 'bg-zinc-700 text-white'
               : 'text-zinc-500 hover:text-zinc-300'
@@ -392,8 +665,10 @@ function TabButton({
   return (
     <button
       type="button"
+      role="tab"
+      aria-selected={active}
       onClick={onClick}
-      className={`flex-1 rounded-md px-2 py-1.5 text-xs font-medium transition ${
+      className={`min-h-[36px] flex-1 rounded-md px-2 py-1.5 text-xs font-medium transition ${
         active ? 'bg-zinc-800 text-white' : 'text-zinc-500 hover:text-zinc-300'
       }`}
     >
@@ -427,19 +702,35 @@ function ExportMenu({
 }) {
   const [open, setOpen] = useState(false)
 
+  useEffect(() => {
+    if (!open) return
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false)
+    }
+    document.addEventListener('keydown', onKeyDown)
+    return () => document.removeEventListener('keydown', onKeyDown)
+  }, [open])
+
   return (
     <div className="relative flex items-center gap-2">
-      <button type="button" onClick={onCopy} className="btn-secondary">
+      <button
+        type="button"
+        onClick={onCopy}
+        className="btn-secondary hidden min-[480px]:inline-flex"
+        title="Copy formatted text (Ctrl+Shift+C)"
+      >
         {copied ? 'Copied!' : 'Copy'}
       </button>
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="btn-secondary hidden sm:inline-flex"
+        aria-expanded={open}
+        aria-haspopup="menu"
+        className="btn-secondary"
       >
         Export {exporting ? '…' : '▾'}
       </button>
-      <button type="button" onClick={onPrint} className="btn-primary">
+      <button type="button" onClick={onPrint} className="btn-primary" title="Print (Ctrl+P)">
         Print
       </button>
 
@@ -451,7 +742,10 @@ function ExportMenu({
             aria-label="Close export menu"
             onClick={() => setOpen(false)}
           />
-          <div className="absolute right-0 top-full z-50 mt-1 w-48 rounded-lg border border-zinc-700 bg-zinc-900 py-1 shadow-xl">
+          <div
+            role="menu"
+            className="absolute right-0 top-full z-50 mt-1 w-48 rounded-lg border border-zinc-700 bg-zinc-900 py-1 shadow-xl"
+          >
             <ExportItem label=".txt" onClick={() => { onTxt(); setOpen(false) }} />
             <ExportItem
               label=".docx"

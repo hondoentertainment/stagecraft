@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import type { FormatSettings } from '../types/script'
 import { formatScript } from '../lib/formatter'
 import {
@@ -109,13 +109,23 @@ function Stat({ label, value }: { label: string; value: string }) {
 }
 
 function CopyButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false)
+
+  const handleCopy = async () => {
+    const ok = await copyToClipboard(text)
+    if (ok) {
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    }
+  }
+
   return (
     <button
       type="button"
-      onClick={() => void copyToClipboard(text)}
-      className="text-[10px] text-amber-500/80 transition hover:text-amber-400"
+      onClick={() => void handleCopy()}
+      className="min-h-[32px] px-1 text-[10px] text-amber-500/80 transition hover:text-amber-400"
     >
-      Copy
+      {copied ? 'Copied!' : 'Copy'}
     </button>
   )
 }
