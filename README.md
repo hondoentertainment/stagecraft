@@ -5,8 +5,6 @@ Professional playwright script formatter. Paste a raw script and get industry-st
 **Production:** [stagecraft-kappa.vercel.app](https://stagecraft-kappa.vercel.app)  
 **Repository:** [github.com/hondoentertainment/stagecraft](https://github.com/hondoentertainment/stagecraft)
 
-> The legacy `the-portfolio` repo redirects here. Use this repo as the single source of truth.
-
 ## Demo
 
 1. Open the production URL — sample script loads with Dramatists Guild formatting.
