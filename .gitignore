@@ -28,3 +28,4 @@ test-results/
 playwright-report/
 .playwright-cli/
 .deploy-launch.log
+.env*.local

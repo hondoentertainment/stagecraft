@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<FinalDraft DocumentType="Script" Template="Screenplay" Version="3">
+  <Content>
+    <Paragraph Type="Scene Heading">
+      <Text>INT. STUDIO - DAY</Text>
+    </Paragraph>
+    <Paragraph Type="Character">
+      <Text>ANNA</Text>
+    </Paragraph>
+    <Paragraph Type="Dialogue">
+      <Text>We made it.</Text>
+    </Paragraph>
+  </Content>
+</FinalDraft>

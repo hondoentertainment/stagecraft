@@ -2,6 +2,18 @@
 
 Professional playwright script formatter. Paste a raw script and get industry-standard layout — character cues, dialogue indents, stage directions, act/scene headings, pagination, and a title page.
 
+**Production:** [stagecraft-kappa.vercel.app](https://stagecraft-kappa.vercel.app)  
+**Repository:** [github.com/hondoentertainment/stagecraft](https://github.com/hondoentertainment/stagecraft)
+
+> The legacy `the-portfolio` repo redirects here. Use this repo as the single source of truth.
+
+## Demo
+
+1. Open the production URL — sample script loads with Dramatists Guild formatting.
+2. Paste or upload `.txt`, `.docx`, `.fountain`, `.fdx`, or `.md`.
+3. Use **Export** for PDF, DOCX, Fountain, FDX, or a submission ZIP.
+4. Click **Outline** warnings to jump to lines that need fixes.
+
 ## Features
 
 - **Smart parsing** — Characters, dialogue, parentheticals, stage directions, transitions, lyrics, V.O./O.S./CONT'D modifiers

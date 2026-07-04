@@ -242,6 +242,18 @@ export default function App() {
               <p className="hidden text-xs text-zinc-500 sm:block">
                 Professional playwright formatter
                 <SaveStatus savedFlash={savedFlash} autosaveStatus={autosaveStatus} />
+                {formatted.warnings.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSidebarTab('outline')
+                      setMobileToolsOpen(true)
+                    }}
+                    className="ml-2 text-amber-400 underline-offset-2 hover:underline"
+                  >
+                    · {formatted.warnings.length} warning{formatted.warnings.length === 1 ? '' : 's'}
+                  </button>
+                )}
               </p>
             </div>
           </div>
@@ -333,6 +345,15 @@ export default function App() {
                 <span className="ml-2 font-normal text-zinc-600">
                   {formatted.pageCount} pages · ~{formatted.estimatedRuntimeMinutes} min
                 </span>
+                {formatted.warnings.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setSidebarTab('outline')}
+                    className="ml-2 font-normal normal-case text-amber-400 hover:underline"
+                  >
+                    {formatted.warnings.length} warning{formatted.warnings.length === 1 ? '' : 's'}
+                  </button>
+                )}
               </h2>
               <div className="flex gap-3 sm:hidden">
                 <button
@@ -478,13 +499,6 @@ export default function App() {
                 setMobileToolsOpen(false)
                 if (view === 'preview') setView('split')
               }}
-            />
-          )}
-          {sidebarTab === 'cast' && (
-            <CastPanel
-              rawScript={rawScript}
-              castMetadata={castMetadata}
-              onChange={setCastMetadata}
             />
           )}
           {sidebarTab === 'cast' && (

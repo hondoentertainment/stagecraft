@@ -3,6 +3,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import { DEFAULT_SETTINGS, SAMPLE_SCRIPT } from '../../types/script'
+import { getPresetSettings } from '../presets'
 import { formatScript, formatScriptToHtml } from '../formatter'
 
 const __dir = dirname(fileURLToPath(import.meta.url))
@@ -26,5 +27,14 @@ describe('golden file output', () => {
     expect(html).toContain('Cast of Characters')
     expect(html).toContain('class="direction"')
     expect(html).toContain(expected.trim())
+  })
+
+  it('formats musical preset with ALL CAPS lyrics', () => {
+    const musicalScript = readFileSync(join(fixtureDir, 'sample-musical.txt'), 'utf-8')
+    const settings = getPresetSettings('musical')
+    const result = formatScript(musicalScript, settings)
+    expect(result.plainText).toContain('Opening Number')
+    expect(result.plainText).toMatch(/WELCOME TO THE MIDNIGHT SHOW/)
+    expect(result.plainText).toContain('MAYA')
   })
 })
